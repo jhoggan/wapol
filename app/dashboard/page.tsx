@@ -12,12 +12,11 @@ export default async function DashboardOverviewPage() {
 
   if (!user) return null;
 
-  const { count: candidateCount, error: candidateCountError } = await supabase
-    .from("candidates")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", user.id);
+  const { count: committeeCount, error: committeeCountError } = await supabase
+    .from("committees")
+    .select("*", { count: "exact", head: true });
 
-  if (!candidateCountError && (candidateCount ?? 0) === 0) {
+  if (!committeeCountError && (committeeCount ?? 0) === 0) {
     redirect("/dashboard/committees/new");
   }
 

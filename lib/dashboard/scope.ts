@@ -2,20 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export async function getCommitteeIdsForUser(
   supabase: SupabaseClient,
-  userId: string
+  _userId: string
 ): Promise<string[]> {
-  const { data: candidates, error: cErr } = await supabase
-    .from("candidates")
-    .select("id")
-    .eq("user_id", userId);
-
-  if (cErr || !candidates?.length) return [];
-
-  const candidateIds = candidates.map((c) => c.id);
   const { data: committees, error: comErr } = await supabase
     .from("committees")
-    .select("id")
-    .in("candidate_id", candidateIds);
+    .select("id");
 
   if (comErr || !committees?.length) return [];
   return committees.map((c) => c.id);
@@ -31,7 +22,8 @@ export async function getCommitteesForSelect(
     .select(
       `
       id,
-      candidates ( name, election_year )
+      candidates ( name, election_year ),
+      political_groups ( legal_name, election_year )
     `
     )
     .order("created_at", { ascending: true });
@@ -39,14 +31,26 @@ export async function getCommitteesForSelect(
   if (error || !data) return [];
 
   return data.map((row) => {
-    const raw = row.candidates as
-      | { name: string; election_year: number }
-      | { name: string; election_year: number }[]
+    const candRaw = row.candidates as
+      | { name: string | null; election_year: number }
+      | { name: string | null; election_year: number }[]
       | null;
-    const cand = Array.isArray(raw) ? raw[0] : raw;
-    const label = cand
-      ? `${cand.name} (${cand.election_year})`
-      : `Committee ${row.id.slice(0, 8)}…`;
+    const cand = Array.isArray(candRaw) ? candRaw[0] : candRaw;
+    const pgRaw = row.political_groups as
+      | { legal_name: string; election_year: number | null }
+      | { legal_name: string; election_year: number | null }[]
+      | null;
+    const pg = Array.isArray(pgRaw) ? pgRaw[0] : pgRaw;
+
+    let label: string;
+    if (cand?.name) {
+      label = `${cand.name} (${cand.election_year})`;
+    } else if (pg?.legal_name) {
+      const y = pg.election_year;
+      label = y != null ? `${pg.legal_name} (${y})` : pg.legal_name;
+    } else {
+      label = `Committee ${row.id.slice(0, 8)}…`;
+    }
     return { id: row.id, label };
   });
 }
