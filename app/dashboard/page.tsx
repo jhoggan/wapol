@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getCommitteeIdsForUser } from "@/lib/dashboard/scope";
@@ -10,6 +11,15 @@ export default async function DashboardOverviewPage() {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
+
+  const { count: candidateCount, error: candidateCountError } = await supabase
+    .from("candidates")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  if (!candidateCountError && (candidateCount ?? 0) === 0) {
+    redirect("/dashboard/committees/new");
+  }
 
   const committeeIds = await getCommitteeIdsForUser(supabase, user.id);
   const today = new Date().toISOString().slice(0, 10);

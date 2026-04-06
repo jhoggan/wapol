@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard", label: "Overview" },
+  { href: "/dashboard/committees", label: "Committees" },
   { href: "/dashboard/contributions", label: "Contributions" },
   { href: "/dashboard/expenditures", label: "Expenditures" },
   { href: "/dashboard/deadlines", label: "Deadlines" },
@@ -12,6 +13,12 @@ const links = [
 
 function linkActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
+  if (href === "/dashboard/committees") {
+    return (
+      pathname === "/dashboard/committees" ||
+      pathname.startsWith("/dashboard/committees/")
+    );
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
