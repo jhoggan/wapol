@@ -9,18 +9,21 @@ import { createClient } from "@/lib/supabase/client";
 type Props = {
   nextPath: string;
   errorMessage?: string;
+  successMessage?: string;
 };
 
-export function LoginForm({ nextPath, errorMessage }: Props) {
+export function LoginForm({ nextPath, errorMessage, successMessage }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(errorMessage ?? null);
+  const [dismissSuccessBanner, setDismissSuccessBanner] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDismissSuccessBanner(true);
     setLoading(true);
 
     const supabase = createClient();
@@ -43,6 +46,11 @@ export function LoginForm({ nextPath, errorMessage }: Props) {
   return (
     <AuthLayout title="Sign in">
       <form onSubmit={handleSubmit} className="space-y-5">
+        {successMessage && !dismissSuccessBanner && (
+          <p className="text-sm text-green-700 dark:text-green-400" role="status">
+            {successMessage}
+          </p>
+        )}
         {(error || errorMessage) && (
           <p
             className="text-sm text-red-600 dark:text-red-400"
@@ -67,9 +75,17 @@ export function LoginForm({ nextPath, errorMessage }: Props) {
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="login-password" className="text-sm font-medium block">
-            Password
-          </label>
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="login-password" className="text-sm font-medium">
+              Password
+            </label>
+            <Link
+              href="/login/forgot-password"
+              className="text-sm font-medium text-neutral-600 dark:text-neutral-400 underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <input
             id="login-password"
             name="password"

@@ -18,7 +18,7 @@ function safeNext(path: string | undefined): string {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string; message?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -33,6 +33,16 @@ export default async function LoginPage({
   const nextPath = safeNext(params.next);
   const errorKey = params.error;
   const errorMessage = errorKey ? errorMessages[errorKey] ?? errorKey : undefined;
+  const successMessage =
+    params.message === "password_updated"
+      ? "Your password was updated. Sign in with your new password."
+      : undefined;
 
-  return <LoginForm nextPath={nextPath} errorMessage={errorMessage} />;
+  return (
+    <LoginForm
+      nextPath={nextPath}
+      errorMessage={errorMessage}
+      successMessage={successMessage}
+    />
+  );
 }
