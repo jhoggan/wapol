@@ -17,9 +17,14 @@ export type DeadlineRow = {
 type Props = {
   initialRows: DeadlineRow[];
   todayIso: string;
+  scopedCommitteeLabel?: string;
 };
 
-export function DeadlinesClient({ initialRows, todayIso }: Props) {
+export function DeadlinesClient({
+  initialRows,
+  todayIso,
+  scopedCommitteeLabel,
+}: Props) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [rows, setRows] = useState(initialRows);
@@ -54,7 +59,9 @@ export function DeadlinesClient({ initialRows, todayIso }: Props) {
           Filing deadlines
         </h1>
         <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-          Sorted by due date. Overdue and incomplete rows are highlighted.
+          {scopedCommitteeLabel
+            ? `Deadlines for ${scopedCommitteeLabel}. Sorted by due date.`
+            : "Sorted by due date. Overdue and incomplete rows are highlighted."}
         </p>
       </div>
 

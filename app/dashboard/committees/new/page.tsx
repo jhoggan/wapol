@@ -4,9 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  defaultJurisdictionForRace,
-  JURISDICTION_TYPE_OPTIONS,
-  raceTypeLabel,
+  jurisdictionTypeLabel,
   type JurisdictionType,
   type RaceType,
 } from "@/lib/campaign-labels";
@@ -73,16 +71,88 @@ const US_JURISDICTIONS: string[] = [
   "Wyoming",
 ];
 
-const RACE_BY_LEVEL: Record<"state" | "county" | "municipal", RaceType[]> = {
+const PARTY_OPTIONS = [
+  "Democratic Party",
+  "Republican Party",
+  "Unaffiliated",
+] as const;
+
+const UTAH_COUNTIES = [
+  "Beaver",
+  "Box Elder",
+  "Cache",
+  "Carbon",
+  "Daggett",
+  "Davis",
+  "Duchesne",
+  "Emery",
+  "Garfield",
+  "Grand",
+  "Iron",
+  "Juab",
+  "Kane",
+  "Millard",
+  "Morgan",
+  "Piute",
+  "Rich",
+  "Salt Lake",
+  "San Juan",
+  "Sanpete",
+  "Sevier",
+  "Summit",
+  "Tooele",
+  "Uintah",
+  "Utah",
+  "Wasatch",
+  "Washington",
+  "Wayne",
+  "Weber",
+] as const;
+
+const RACE_OPTIONS_BY_LEVEL: Record<
+  "state" | "county" | "municipal",
+  { value: RaceType; label: string }[]
+> = {
   state: [
-    "state_house",
-    "state_senate",
-    "state_school_board",
-    "state_constitutional",
+    { value: "state_house", label: "State House" },
+    { value: "state_senate", label: "State Senate" },
+    { value: "state_school_board", label: "State School Board" },
+    { value: "state_constitutional", label: "State Constitutional Office" },
   ],
-  county: ["county", "county_school_board"],
-  municipal: ["municipal"],
+  county: [
+    { value: "county", label: "County Office" },
+    { value: "county_school_board", label: "County School Board" },
+  ],
+  municipal: [{ value: "municipal", label: "Municipal Office" }],
 };
+
+const SPECIAL_ELECTION_TYPES = [
+  { value: "primary", label: "Primary" },
+  { value: "general", label: "General" },
+  { value: "runoff", label: "Runoff" },
+] as const;
+
+const HOUSE_DISTRICT_OPTIONS = Array.from({ length: 75 }, (_, i) => {
+  const n = i + 1;
+  return `House District ${n}`;
+});
+
+const SENATE_DISTRICT_OPTIONS = Array.from({ length: 29 }, (_, i) => {
+  const n = i + 1;
+  return `Senate District ${n}`;
+});
+
+const STATE_SCHOOL_BOARD_OPTIONS = Array.from({ length: 15 }, (_, i) => {
+  const n = i + 1;
+  return `State School Board District ${n}`;
+});
+
+const CONSTITUTIONAL_OFFICES = [
+  "Governor",
+  "Attorney General",
+  "State Auditor",
+  "State Treasurer",
+] as const;
 
 const PG_GROUP_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "PAC", label: "Political Action Committee (PAC)" },
@@ -106,12 +176,16 @@ type FormData = {
   lastName: string;
   party: string;
   campaignLevel: CampaignLevel;
+  utahCounty: string;
   officeName: string;
   raceType: RaceType | "";
   judicialElection: boolean;
   generalElectionDate: string;
   primaryElectionDate: string;
   specialElection: boolean;
+  specialElectionType: "primary" | "general" | "runoff" | "";
+  specialElectionDate: string;
+  identifiesLeftLeaning: boolean | null;
   currentlyHoldingOffice: boolean;
   publicFinanceProgram: boolean;
   pgApplicantFirstName: string;
@@ -120,12 +194,11 @@ type FormData = {
   pgEntityFolderLink: string;
   legalName: string;
   treasurerName: string;
+  useTreasurerAsSelf: boolean;
   mailingAddress: string;
   website: string;
   contactPhone: string;
   contactEmail: string;
-  filingJurisdictionType: JurisdictionType | "";
-  filingJurisdictionName: string;
   filingStatus: string;
   contributionLimit: string;
   pgSocialFacebook: string;
@@ -139,12 +212,16 @@ const initialForm: FormData = {
   lastName: "",
   party: "",
   campaignLevel: "",
+  utahCounty: "",
   officeName: "",
   raceType: "",
   judicialElection: false,
   generalElectionDate: "",
   primaryElectionDate: "",
   specialElection: false,
+  specialElectionType: "",
+  specialElectionDate: "",
+  identifiesLeftLeaning: null,
   currentlyHoldingOffice: false,
   publicFinanceProgram: false,
   pgApplicantFirstName: "",
@@ -153,12 +230,11 @@ const initialForm: FormData = {
   pgEntityFolderLink: "",
   legalName: "",
   treasurerName: "",
+  useTreasurerAsSelf: false,
   mailingAddress: "",
   website: "",
   contactPhone: "",
   contactEmail: "",
-  filingJurisdictionType: "",
-  filingJurisdictionName: "",
   filingStatus: "",
   contributionLimit: "",
   pgSocialFacebook: "",
@@ -185,6 +261,45 @@ function electionYearFromForm(d: FormData): number {
   return new Date().getFullYear();
 }
 
+function onboardingRaceLabel(rt: RaceType | ""): string {
+  if (!rt) return "—";
+  for (const level of ["state", "county", "municipal"] as const) {
+    const hit = RACE_OPTIONS_BY_LEVEL[level].find((o) => o.value === rt);
+    if (hit) return hit.label;
+  }
+  return rt;
+}
+
+function candidateFilingFromForm(d: FormData): {
+  type: JurisdictionType;
+  name: string;
+} {
+  const rt = d.raceType as RaceType;
+  const stateRaces: RaceType[] = [
+    "state_house",
+    "state_senate",
+    "state_school_board",
+    "state_constitutional",
+  ];
+  if (stateRaces.includes(rt)) {
+    return {
+      type: "lieutenant_governor",
+      name: "Utah Lieutenant Governor's Office",
+    };
+  }
+  if (rt === "county" || rt === "county_school_board") {
+    return { type: "county", name: d.utahCounty.trim() };
+  }
+  if (rt === "municipal") {
+    const muni = d.officeName.trim();
+    return {
+      type: "municipal",
+      name: muni ? `${muni} City Recorder` : "",
+    };
+  }
+  return { type: "lieutenant_governor", name: "" };
+}
+
 export default function NewCommitteePage() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -199,23 +314,21 @@ export default function NewCommitteePage() {
 
   const raceOptions = useMemo(() => {
     if (!data.campaignLevel) return [];
-    return RACE_BY_LEVEL[data.campaignLevel] ?? [];
+    return RACE_OPTIONS_BY_LEVEL[data.campaignLevel] ?? [];
   }, [data.campaignLevel]);
 
   useEffect(() => {
-    if (
-      step !== 4 ||
-      data.entityType !== "candidate" ||
-      !data.raceType ||
-      data.filingJurisdictionType
-    ) {
-      return;
-    }
-    setData((prev) => ({
-      ...prev,
-      filingJurisdictionType: defaultJurisdictionForRace(prev.raceType as RaceType),
-    }));
-  }, [step, data.entityType, data.raceType, data.filingJurisdictionType]);
+    if (data.entityType !== "candidate" || !data.useTreasurerAsSelf) return;
+    const t = `${data.firstName.trim()} ${data.lastName.trim()}`.trim();
+    setData((prev) =>
+      prev.treasurerName === t ? prev : { ...prev, treasurerName: t }
+    );
+  }, [
+    data.entityType,
+    data.useTreasurerAsSelf,
+    data.firstName,
+    data.lastName,
+  ]);
 
   const validateStep = useCallback(
     (s: number): boolean => {
@@ -231,8 +344,24 @@ export default function NewCommitteePage() {
         if (!data.lastName.trim()) e.lastName = "Required.";
         if (!data.party.trim()) e.party = "Required.";
         if (!data.campaignLevel) e.campaignLevel = "Select campaign level.";
-        if (!data.officeName.trim()) e.officeName = "Required.";
+        if (
+          (data.campaignLevel === "county" || data.campaignLevel === "municipal") &&
+          !data.utahCounty.trim()
+        ) {
+          e.utahCounty = "Select a county.";
+        }
         if (!data.raceType) e.raceType = "Select race type.";
+        if (!data.officeName.trim()) e.officeName = "Required.";
+        if (!data.contactPhone.trim()) e.contactPhone = "Required.";
+        if (!data.contactEmail.trim()) e.contactEmail = "Required.";
+        if (data.specialElection) {
+          if (!data.specialElectionType) {
+            e.specialElectionType = "Select special election type.";
+          }
+          if (!data.specialElectionDate.trim()) {
+            e.specialElectionDate = "Select special election date.";
+          }
+        }
       }
       if (s === 3 && data.entityType === "political_group") {
         if (!data.pgApplicantFirstName.trim()) e.pgApplicantFirstName = "Required.";
@@ -243,14 +372,12 @@ export default function NewCommitteePage() {
         if (!data.legalName.trim()) e.legalName = "Required.";
         if (!data.treasurerName.trim()) e.treasurerName = "Required.";
         if (!data.mailingAddress.trim()) e.mailingAddress = "Required.";
-        if (!data.contactPhone.trim()) e.contactPhone = "Required.";
-        if (!data.contactEmail.trim()) e.contactEmail = "Required.";
-        if (!data.filingJurisdictionType) e.filingJurisdictionType = "Required.";
-        if (!data.filingJurisdictionName.trim()) e.filingJurisdictionName = "Required.";
         if (!data.filingStatus.trim()) e.filingStatus = "Required.";
-        const lim = parseLimit(data.contributionLimit);
-        if (data.contributionLimit.trim() !== "" && !Number.isFinite(lim)) {
-          e.contributionLimit = "Enter a valid number or leave blank.";
+        if (data.campaignLevel === "county" || data.campaignLevel === "municipal") {
+          const lim = parseLimit(data.contributionLimit);
+          if (data.contributionLimit.trim() !== "" && !Number.isFinite(lim)) {
+            e.contributionLimit = "Enter a valid number or leave blank.";
+          }
         }
       }
       if (s === 4 && data.entityType === "political_group") {
@@ -302,14 +429,18 @@ export default function NewCommitteePage() {
   function handleCampaignLevel(level: CampaignLevel) {
     update("campaignLevel", level);
     update("raceType", "");
-    if (level && RACE_BY_LEVEL[level]?.length === 1) {
-      update("raceType", RACE_BY_LEVEL[level][0]);
+    update("officeName", "");
+    if (level !== "county" && level !== "municipal") {
+      update("utahCounty", "");
+    }
+    if (level && RACE_OPTIONS_BY_LEVEL[level]?.length === 1) {
+      update("raceType", RACE_OPTIONS_BY_LEVEL[level][0].value);
     }
   }
 
   function handleRaceType(rt: RaceType) {
     update("raceType", rt);
-    update("filingJurisdictionType", defaultJurisdictionForRace(rt));
+    update("officeName", "");
   }
 
   async function handleConfirmSubmit() {
@@ -336,7 +467,17 @@ export default function NewCommitteePage() {
     }
 
     const limitNum = parseLimit(data.contributionLimit);
-    if (data.contributionLimit.trim() !== "" && !Number.isFinite(limitNum)) {
+    if (data.entityType === "candidate") {
+      if (
+        data.campaignLevel !== "state" &&
+        data.contributionLimit.trim() !== "" &&
+        !Number.isFinite(limitNum)
+      ) {
+        setSaving(false);
+        setSubmitError("Contribution limit must be a valid number or empty.");
+        return;
+      }
+    } else if (data.contributionLimit.trim() !== "" && !Number.isFinite(limitNum)) {
       setSaving(false);
       setSubmitError("Contribution limit must be a valid number or empty.");
       return;
@@ -344,6 +485,10 @@ export default function NewCommitteePage() {
 
     if (data.entityType === "candidate") {
       const year = electionYearFromForm(data);
+      const filing = candidateFilingFromForm(data);
+      const committeeLimit =
+        data.campaignLevel === "state" ? null : limitNum;
+
       const { data: candRow, error: cErr } = await supabase
         .from("candidates")
         .insert({
@@ -356,14 +501,25 @@ export default function NewCommitteePage() {
           race_type: data.raceType as RaceType,
           party: data.party.trim(),
           campaign_level: data.campaignLevel,
+          utah_county:
+            data.campaignLevel === "county" || data.campaignLevel === "municipal"
+              ? data.utahCounty.trim() || null
+              : null,
           judicial_election: data.judicialElection,
           general_election_date: data.generalElectionDate.trim() || null,
           primary_election_date: data.primaryElectionDate.trim() || null,
           special_election: data.specialElection,
+          special_election_date: data.specialElection
+            ? data.specialElectionDate.trim() || null
+            : null,
+          special_election_type: data.specialElection
+            ? data.specialElectionType || null
+            : null,
+          identifies_left_leaning:
+            data.party === "Unaffiliated" ? data.identifiesLeftLeaning : null,
           currently_holding_office: data.currentlyHoldingOffice,
           public_finance_program: data.publicFinanceProgram,
           committee_legal_name: data.legalName.trim(),
-          committee_mailing_address: data.mailingAddress.trim(),
           website: data.website.trim() || null,
           contact_phone: data.contactPhone.trim(),
           contact_email: data.contactEmail.trim(),
@@ -386,10 +542,10 @@ export default function NewCommitteePage() {
         political_group_id: null,
         treasurer_name: data.treasurerName.trim(),
         mailing_address: data.mailingAddress.trim(),
-        filing_jurisdiction_type: data.filingJurisdictionType as JurisdictionType,
-        filing_jurisdiction_name: data.filingJurisdictionName.trim(),
+        filing_jurisdiction_type: filing.type,
+        filing_jurisdiction_name: filing.name,
         filing_status: data.filingStatus.trim(),
-        contribution_limit: limitNum,
+        contribution_limit: committeeLimit,
       });
 
       if (comErr) {
@@ -648,18 +804,78 @@ export default function NewCommitteePage() {
             </div>
             <div>
               <label htmlFor="party" className={labelClass}>
-                Party affiliation / platform
+                Party Affiliation
               </label>
-              <input
+              <select
                 id="party"
                 value={data.party}
-                onChange={(e) => update("party", e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  update("party", v);
+                  if (v !== "Unaffiliated") {
+                    update("identifiesLeftLeaning", null);
+                  }
+                }}
                 className={inputClass}
-              />
+              >
+                <option value="">Select…</option>
+                {PARTY_OPTIONS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
               {errors.party ? (
                 <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.party}</p>
               ) : null}
             </div>
+            {data.party === "Republican Party" ? (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+                <p className="text-sm text-neutral-800 dark:text-neutral-200">
+                  Wasatch Political currently works with Democratic and unaffiliated
+                  candidates. We&apos;re not able to support Republican campaigns at
+                  this time.
+                </p>
+                <Link
+                  href="/waitlist"
+                  className="inline-flex rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium hover:opacity-90"
+                >
+                  Join our waitlist
+                </Link>
+              </div>
+            ) : null}
+            {data.party === "Unaffiliated" ? (
+              <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 space-y-2">
+                <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  Do you identify as liberal, progressive, or otherwise
+                  left-leaning?
+                </p>
+                <div className="flex rounded-lg border border-neutral-300 dark:border-neutral-600 overflow-hidden w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => update("identifiesLeftLeaning", false)}
+                    className={`flex-1 sm:flex-initial px-4 py-2 text-sm font-medium transition-colors ${
+                      data.identifiesLeftLeaning === false
+                        ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+                        : "bg-white dark:bg-neutral-950 text-neutral-600 dark:text-neutral-400"
+                    }`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => update("identifiesLeftLeaning", true)}
+                    className={`flex-1 sm:flex-initial px-4 py-2 text-sm font-medium transition-colors border-l border-neutral-300 dark:border-neutral-600 ${
+                      data.identifiesLeftLeaning === true
+                        ? "bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900"
+                        : "bg-white dark:bg-neutral-950 text-neutral-600 dark:text-neutral-400"
+                    }`}
+                  >
+                    Yes
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div>
               <label htmlFor="clevel" className={labelClass}>
                 Campaign level
@@ -683,20 +899,32 @@ export default function NewCommitteePage() {
                 </p>
               ) : null}
             </div>
-            <div>
-              <label htmlFor="office" className={labelClass}>
-                Office name
-              </label>
-              <input
-                id="office"
-                value={data.officeName}
-                onChange={(e) => update("officeName", e.target.value)}
-                className={inputClass}
-              />
-              {errors.officeName ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.officeName}</p>
-              ) : null}
-            </div>
+            {(data.campaignLevel === "county" ||
+              data.campaignLevel === "municipal") && (
+              <div>
+                <label htmlFor="utah-co" className={labelClass}>
+                  Utah county
+                </label>
+                <select
+                  id="utah-co"
+                  value={data.utahCounty}
+                  onChange={(e) => update("utahCounty", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {UTAH_COUNTIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                {errors.utahCounty ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    {errors.utahCounty}
+                  </p>
+                ) : null}
+              </div>
+            )}
             <div>
               <label htmlFor="rtype" className={labelClass}>
                 Race type
@@ -713,14 +941,101 @@ export default function NewCommitteePage() {
                 <option value="">
                   {raceOptions.length ? "Select…" : "Choose campaign level first"}
                 </option>
-                {raceOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {raceTypeLabel(v)}
+                {raceOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
                   </option>
                 ))}
               </select>
               {errors.raceType ? (
                 <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.raceType}</p>
+              ) : null}
+            </div>
+            <div>
+              <label htmlFor="office" className={labelClass}>
+                Office name
+              </label>
+              {data.raceType === "state_house" ? (
+                <select
+                  id="office"
+                  value={data.officeName}
+                  onChange={(e) => update("officeName", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {HOUSE_DISTRICT_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : data.raceType === "state_senate" ? (
+                <select
+                  id="office"
+                  value={data.officeName}
+                  onChange={(e) => update("officeName", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {SENATE_DISTRICT_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : data.raceType === "state_school_board" ? (
+                <select
+                  id="office"
+                  value={data.officeName}
+                  onChange={(e) => update("officeName", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {STATE_SCHOOL_BOARD_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : data.raceType === "state_constitutional" ? (
+                <select
+                  id="office"
+                  value={data.officeName}
+                  onChange={(e) => update("officeName", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  {CONSTITUTIONAL_OFFICES.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : data.raceType === "county" ||
+                data.raceType === "county_school_board" ||
+                data.raceType === "municipal" ? (
+                <input
+                  id="office"
+                  value={data.officeName}
+                  onChange={(e) => update("officeName", e.target.value)}
+                  className={inputClass}
+                  placeholder={
+                    data.raceType === "municipal"
+                      ? "Municipality name"
+                      : "Office name"
+                  }
+                />
+              ) : (
+                <input
+                  id="office"
+                  value={data.officeName}
+                  disabled
+                  className={`${inputClass} opacity-60`}
+                  placeholder="Select race type first"
+                />
+              )}
+              {errors.officeName ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">{errors.officeName}</p>
               ) : null}
             </div>
 
@@ -744,7 +1059,8 @@ export default function NewCommitteePage() {
               </div>
               <div>
                 <label htmlFor="ped" className={labelClass}>
-                  Primary election date
+                  Primary election date{" "}
+                  <span className="font-normal text-neutral-500">(optional)</span>
                 </label>
                 <input
                   id="ped"
@@ -760,6 +1076,61 @@ export default function NewCommitteePage() {
               value={data.specialElection}
               onChange={(v) => update("specialElection", v)}
             />
+            {data.specialElection ? (
+              <div className="grid sm:grid-cols-2 gap-4 pl-0 sm:pl-2 border-l-2 border-neutral-200 dark:border-neutral-700">
+                <div>
+                  <label htmlFor="sp-type" className={labelClass}>
+                    Special election type
+                  </label>
+                  <select
+                    id="sp-type"
+                    value={data.specialElectionType}
+                    onChange={(e) =>
+                      update(
+                        "specialElectionType",
+                        e.target.value as
+                          | "primary"
+                          | "general"
+                          | "runoff"
+                          | ""
+                      )
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">Select…</option>
+                    {SPECIAL_ELECTION_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.specialElectionType ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.specialElectionType}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="sp-date" className={labelClass}>
+                    Special election date
+                  </label>
+                  <input
+                    id="sp-date"
+                    type="date"
+                    value={data.specialElectionDate}
+                    onChange={(e) =>
+                      update("specialElectionDate", e.target.value)
+                    }
+                    className={inputClass}
+                  />
+                  {errors.specialElectionDate ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.specialElectionDate}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <ToggleRow
               label="Currently holding office"
               value={data.currentlyHoldingOffice}
@@ -770,6 +1141,40 @@ export default function NewCommitteePage() {
               value={data.publicFinanceProgram}
               onChange={(v) => update("publicFinanceProgram", v)}
             />
+            <div>
+              <label htmlFor="phone" className={labelClass}>
+                Contact phone
+              </label>
+              <input
+                id="phone"
+                type="tel"
+                value={data.contactPhone}
+                onChange={(e) => update("contactPhone", e.target.value)}
+                className={inputClass}
+              />
+              {errors.contactPhone ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                  {errors.contactPhone}
+                </p>
+              ) : null}
+            </div>
+            <div>
+              <label htmlFor="em" className={labelClass}>
+                Contact email
+              </label>
+              <input
+                id="em"
+                type="email"
+                value={data.contactEmail}
+                onChange={(e) => update("contactEmail", e.target.value)}
+                className={inputClass}
+              />
+              {errors.contactEmail ? (
+                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                  {errors.contactEmail}
+                </p>
+              ) : null}
+            </div>
 
             <div className="flex justify-between gap-3 pt-4">
               <button
@@ -782,7 +1187,8 @@ export default function NewCommitteePage() {
               <button
                 type="button"
                 onClick={goNext}
-                className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-5 py-2.5 text-sm font-medium hover:opacity-90"
+                disabled={data.party === "Republican Party"}
+                className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Continue
               </button>
@@ -910,7 +1316,11 @@ export default function NewCommitteePage() {
               <input
                 id="tres"
                 value={data.treasurerName}
-                onChange={(e) => update("treasurerName", e.target.value)}
+                disabled={data.useTreasurerAsSelf}
+                onChange={(e) => {
+                  update("useTreasurerAsSelf", false);
+                  update("treasurerName", e.target.value);
+                }}
                 className={inputClass}
               />
               {errors.treasurerName ? (
@@ -918,6 +1328,24 @@ export default function NewCommitteePage() {
                   {errors.treasurerName}
                 </p>
               ) : null}
+              <label className="mt-2 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={data.useTreasurerAsSelf}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    update("useTreasurerAsSelf", checked);
+                    if (checked) {
+                      update(
+                        "treasurerName",
+                        `${data.firstName.trim()} ${data.lastName.trim()}`.trim()
+                      );
+                    }
+                  }}
+                  className="rounded border-neutral-300 dark:border-neutral-600"
+                />
+                Use my name
+              </label>
             </div>
             <div>
               <label htmlFor="mail" className={labelClass}>
@@ -950,81 +1378,6 @@ export default function NewCommitteePage() {
               />
             </div>
             <div>
-              <label htmlFor="phone" className={labelClass}>
-                Contact phone
-              </label>
-              <input
-                id="phone"
-                type="tel"
-                value={data.contactPhone}
-                onChange={(e) => update("contactPhone", e.target.value)}
-                className={inputClass}
-              />
-              {errors.contactPhone ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.contactPhone}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="em" className={labelClass}>
-                Contact email
-              </label>
-              <input
-                id="em"
-                type="email"
-                value={data.contactEmail}
-                onChange={(e) => update("contactEmail", e.target.value)}
-                className={inputClass}
-              />
-              {errors.contactEmail ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.contactEmail}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="fjtype" className={labelClass}>
-                Filing jurisdiction type
-              </label>
-              <select
-                id="fjtype"
-                value={data.filingJurisdictionType}
-                onChange={(e) =>
-                  update("filingJurisdictionType", e.target.value as JurisdictionType)
-                }
-                className={inputClass}
-              >
-                <option value="">Select…</option>
-                {JURISDICTION_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {errors.filingJurisdictionType ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.filingJurisdictionType}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="fjname" className={labelClass}>
-                Filing jurisdiction name
-              </label>
-              <input
-                id="fjname"
-                value={data.filingJurisdictionName}
-                onChange={(e) => update("filingJurisdictionName", e.target.value)}
-                className={inputClass}
-              />
-              {errors.filingJurisdictionName ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.filingJurisdictionName}
-                </p>
-              ) : null}
-            </div>
-            <div>
               <label htmlFor="fstat" className={labelClass}>
                 Filing status
               </label>
@@ -1040,26 +1393,29 @@ export default function NewCommitteePage() {
                 </p>
               ) : null}
             </div>
-            <div>
-              <label htmlFor="clim" className={labelClass}>
-                Contribution limit{" "}
-                <span className="font-normal text-neutral-500">(optional)</span>
-              </label>
-              <input
-                id="clim"
-                type="number"
-                step="0.01"
-                min="0"
-                value={data.contributionLimit}
-                onChange={(e) => update("contributionLimit", e.target.value)}
-                className={inputClass}
-              />
-              {errors.contributionLimit ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.contributionLimit}
-                </p>
-              ) : null}
-            </div>
+            {(data.campaignLevel === "county" ||
+              data.campaignLevel === "municipal") && (
+              <div>
+                <label htmlFor="clim" className={labelClass}>
+                  Contribution limit{" "}
+                  <span className="font-normal text-neutral-500">(optional)</span>
+                </label>
+                <input
+                  id="clim"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={data.contributionLimit}
+                  onChange={(e) => update("contributionLimit", e.target.value)}
+                  className={inputClass}
+                />
+                {errors.contributionLimit ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    {errors.contributionLimit}
+                  </p>
+                ) : null}
+              </div>
+            )}
             <div className="flex justify-between gap-3 pt-4">
               <button
                 type="button"
@@ -1280,16 +1636,33 @@ export default function NewCommitteePage() {
               {data.entityType === "candidate" ? (
                 <dl className="text-sm space-y-1 text-neutral-600 dark:text-neutral-300">
                   <ReviewRow label="Name" value={`${data.firstName} ${data.lastName}`} />
-                  <ReviewRow label="Party / platform" value={data.party} />
+                  <ReviewRow label="Party Affiliation" value={data.party} />
+                  {data.party === "Unaffiliated" ? (
+                    <ReviewRow
+                      label="Left-leaning (liberal / progressive)"
+                      value={
+                        data.identifiesLeftLeaning === null
+                          ? "—"
+                          : data.identifiesLeftLeaning
+                            ? "Yes"
+                            : "No"
+                      }
+                    />
+                  ) : null}
                   <ReviewRow
                     label="Campaign level"
                     value={data.campaignLevel || "—"}
                   />
-                  <ReviewRow label="Office" value={data.officeName} />
+                  {(data.campaignLevel === "county" ||
+                    data.campaignLevel === "municipal") &&
+                  data.utahCounty ? (
+                    <ReviewRow label="Utah county" value={data.utahCounty} />
+                  ) : null}
                   <ReviewRow
                     label="Race type"
-                    value={data.raceType ? raceTypeLabel(data.raceType) : "—"}
+                    value={onboardingRaceLabel(data.raceType)}
                   />
+                  <ReviewRow label="Office" value={data.officeName} />
                   <ReviewRow
                     label="Judicial election"
                     value={data.judicialElection ? "Yes" : "No"}
@@ -1306,6 +1679,22 @@ export default function NewCommitteePage() {
                     label="Special election"
                     value={data.specialElection ? "Yes" : "No"}
                   />
+                  {data.specialElection ? (
+                    <>
+                      <ReviewRow
+                        label="Special election type"
+                        value={
+                          SPECIAL_ELECTION_TYPES.find(
+                            (t) => t.value === data.specialElectionType
+                          )?.label ?? "—"
+                        }
+                      />
+                      <ReviewRow
+                        label="Special election date"
+                        value={data.specialElectionDate || "—"}
+                      />
+                    </>
+                  ) : null}
                   <ReviewRow
                     label="Currently holding office"
                     value={data.currentlyHoldingOffice ? "Yes" : "No"}
@@ -1314,6 +1703,8 @@ export default function NewCommitteePage() {
                     label="Public finance program"
                     value={data.publicFinanceProgram ? "Yes" : "No"}
                   />
+                  <ReviewRow label="Contact phone" value={data.contactPhone} />
+                  <ReviewRow label="Contact email" value={data.contactEmail} />
                 </dl>
               ) : (
                 <dl className="text-sm space-y-1 text-neutral-600 dark:text-neutral-300">
@@ -1368,21 +1759,17 @@ export default function NewCommitteePage() {
                     />
                   </>
                 ) : null}
-                <ReviewRow label="Contact phone" value={data.contactPhone} />
-                <ReviewRow label="Contact email" value={data.contactEmail} />
+                {data.entityType === "political_group" ? (
+                  <>
+                    <ReviewRow label="Contact phone" value={data.contactPhone} />
+                    <ReviewRow label="Contact email" value={data.contactEmail} />
+                  </>
+                ) : null}
                 {data.entityType === "candidate" ? (
                   <>
                     <ReviewRow
-                      label="Filing jurisdiction type"
-                      value={
-                        JURISDICTION_TYPE_OPTIONS.find(
-                          (o) => o.value === data.filingJurisdictionType
-                        )?.label ?? "—"
-                      }
-                    />
-                    <ReviewRow
-                      label="Filing jurisdiction name"
-                      value={data.filingJurisdictionName}
+                      label="Filing jurisdiction (auto-assigned)"
+                      value={`${jurisdictionTypeLabel(candidateFilingFromForm(data).type)} — ${candidateFilingFromForm(data).name}`}
                     />
                     <ReviewRow label="Filing status" value={data.filingStatus} />
                   </>
@@ -1394,7 +1781,12 @@ export default function NewCommitteePage() {
                 )}
                 <ReviewRow
                   label="Contribution limit"
-                  value={data.contributionLimit || "—"}
+                  value={
+                    data.entityType === "candidate" &&
+                    data.campaignLevel === "state"
+                      ? "Not applicable (state)"
+                      : data.contributionLimit || "—"
+                  }
                 />
               </dl>
             </section>

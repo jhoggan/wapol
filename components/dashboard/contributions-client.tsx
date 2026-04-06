@@ -19,9 +19,14 @@ export type ContributionRow = {
 type Props = {
   initialRows: ContributionRow[];
   committees: CommitteeOption[];
+  scopedCommitteeLabel?: string;
 };
 
-export function ContributionsClient({ initialRows, committees }: Props) {
+export function ContributionsClient({
+  initialRows,
+  committees,
+  scopedCommitteeLabel,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -91,7 +96,9 @@ export function ContributionsClient({ initialRows, committees }: Props) {
             Contributions
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            All contributions for your committees.
+            {scopedCommitteeLabel
+              ? `Contributions for ${scopedCommitteeLabel}.`
+              : "All contributions for your committees."}
           </p>
         </div>
         <button

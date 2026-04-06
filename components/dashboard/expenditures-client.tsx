@@ -17,9 +17,14 @@ export type ExpenditureRow = {
 type Props = {
   initialRows: ExpenditureRow[];
   committees: CommitteeOption[];
+  scopedCommitteeLabel?: string;
 };
 
-export function ExpendituresClient({ initialRows, committees }: Props) {
+export function ExpendituresClient({
+  initialRows,
+  committees,
+  scopedCommitteeLabel,
+}: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,7 +88,9 @@ export function ExpendituresClient({ initialRows, committees }: Props) {
             Expenditures
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            All expenditures for your committees.
+            {scopedCommitteeLabel
+              ? `Expenditures for ${scopedCommitteeLabel}.`
+              : "All expenditures for your committees."}
           </p>
         </div>
         <button
