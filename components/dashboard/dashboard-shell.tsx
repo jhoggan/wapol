@@ -166,6 +166,17 @@ function CommitteePickerModal({
               </button>
             ))}
           </div>
+          <div className="mt-10 flex flex-col items-center gap-2">
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              Need another committee?
+            </p>
+            <Link
+              href="/dashboard/committees/new"
+              className="inline-flex items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-900 shadow-sm transition-colors hover:bg-neutral-50 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100 dark:hover:bg-neutral-800"
+            >
+              Create new committee
+            </Link>
+          </div>
         </div>
       </div>
     </div>
