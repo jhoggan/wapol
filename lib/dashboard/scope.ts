@@ -23,7 +23,7 @@ export async function getCommitteesForSelect(
       `
       id,
       candidates ( name, election_year ),
-      political_groups ( legal_name, election_year )
+      political_groups ( legal_name )
     `
     )
     .order("created_at", { ascending: true });
@@ -37,8 +37,8 @@ export async function getCommitteesForSelect(
       | null;
     const cand = Array.isArray(candRaw) ? candRaw[0] : candRaw;
     const pgRaw = row.political_groups as
-      | { legal_name: string; election_year: number | null }
-      | { legal_name: string; election_year: number | null }[]
+      | { legal_name: string }
+      | { legal_name: string }[]
       | null;
     const pg = Array.isArray(pgRaw) ? pgRaw[0] : pgRaw;
 
@@ -46,8 +46,7 @@ export async function getCommitteesForSelect(
     if (cand?.name) {
       label = `${cand.name} (${cand.election_year})`;
     } else if (pg?.legal_name) {
-      const y = pg.election_year;
-      label = y != null ? `${pg.legal_name} (${y})` : pg.legal_name;
+      label = pg.legal_name;
     } else {
       label = `Committee ${row.id.slice(0, 8)}…`;
     }

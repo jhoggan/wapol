@@ -84,13 +84,16 @@ const RACE_BY_LEVEL: Record<"state" | "county" | "municipal", RaceType[]> = {
   municipal: ["municipal"],
 };
 
-const GROUP_TYPES = [
-  "PAC",
-  "Super PAC",
-  "Ballot Committee",
-  "527",
-  "LLC",
-] as const;
+const PG_GROUP_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "PAC", label: "Political Action Committee (PAC)" },
+  { value: "PIC", label: "Political Issue Committee (PIC)" },
+  { value: "Political Party", label: "Political Party" },
+  { value: "Labor Organization", label: "Labor Organization" },
+  {
+    value: "Independent Expenditures",
+    label: "Independent Expenditures",
+  },
+];
 
 type EntityChoice = "candidate" | "political_group";
 
@@ -113,12 +116,8 @@ type FormData = {
   publicFinanceProgram: boolean;
   pgApplicantFirstName: string;
   pgApplicantLastName: string;
-  pgLeaderFirstName: string;
-  pgLeaderLastName: string;
   pgType: string;
-  pgMission: string;
-  pgRegulatoryId: string;
-  pgElectionYear: string;
+  pgEntityFolderLink: string;
   legalName: string;
   treasurerName: string;
   mailingAddress: string;
@@ -129,7 +128,6 @@ type FormData = {
   filingJurisdictionName: string;
   filingStatus: string;
   contributionLimit: string;
-  pgSocialTwitter: string;
   pgSocialFacebook: string;
   pgSocialInstagram: string;
 };
@@ -151,12 +149,8 @@ const initialForm: FormData = {
   publicFinanceProgram: false,
   pgApplicantFirstName: "",
   pgApplicantLastName: "",
-  pgLeaderFirstName: "",
-  pgLeaderLastName: "",
   pgType: "",
-  pgMission: "",
-  pgRegulatoryId: "",
-  pgElectionYear: "",
+  pgEntityFolderLink: "",
   legalName: "",
   treasurerName: "",
   mailingAddress: "",
@@ -167,7 +161,6 @@ const initialForm: FormData = {
   filingJurisdictionName: "",
   filingStatus: "",
   contributionLimit: "",
-  pgSocialTwitter: "",
   pgSocialFacebook: "",
   pgSocialInstagram: "",
 };
@@ -265,9 +258,6 @@ export default function NewCommitteePage() {
         if (!data.mailingAddress.trim()) e.mailingAddress = "Required.";
         if (!data.contactPhone.trim()) e.contactPhone = "Required.";
         if (!data.contactEmail.trim()) e.contactEmail = "Required.";
-        if (!data.filingJurisdictionType) e.filingJurisdictionType = "Required.";
-        if (!data.filingJurisdictionName.trim()) e.filingJurisdictionName = "Required.";
-        if (!data.filingStatus.trim()) e.filingStatus = "Required.";
         const lim = parseLimit(data.contributionLimit);
         if (data.contributionLimit.trim() !== "" && !Number.isFinite(lim)) {
           e.contributionLimit = "Enter a valid number or leave blank.";
@@ -409,39 +399,22 @@ export default function NewCommitteePage() {
         return;
       }
     } else {
-      const pgYearRaw = data.pgElectionYear.trim();
-      const pgYear =
-        pgYearRaw === "" ? null : Number.parseInt(pgYearRaw, 10);
-      if (pgYearRaw !== "" && (!Number.isFinite(pgYear) || pgYear! < 1900 || pgYear! > 2100)) {
-        setSaving(false);
-        setSubmitError("Election year must be a valid year or empty.");
-        return;
-      }
-
-      const social: Record<string, string> = {};
-      if (data.pgSocialTwitter.trim()) social.twitter = data.pgSocialTwitter.trim();
-      if (data.pgSocialFacebook.trim()) social.facebook = data.pgSocialFacebook.trim();
-      if (data.pgSocialInstagram.trim()) social.instagram = data.pgSocialInstagram.trim();
-
       const { data: pgRow, error: pgErr } = await supabase
         .from("political_groups")
         .insert({
           user_id: user.id,
           first_name: data.pgApplicantFirstName.trim(),
           last_name: data.pgApplicantLastName.trim(),
-          leader_first_name: data.pgLeaderFirstName.trim() || null,
-          leader_last_name: data.pgLeaderLastName.trim() || null,
-          mission_statement: data.pgMission.trim() || null,
           group_type: data.pgType.trim(),
           legal_name: data.legalName.trim(),
           mailing_address: data.mailingAddress.trim(),
           regulatory_state: "Utah",
-          regulatory_id: data.pgRegulatoryId.trim() || null,
+          entity_folder_link: data.pgEntityFolderLink.trim() || null,
           website: data.website.trim() || null,
-          social_media: Object.keys(social).length ? social : null,
+          facebook: data.pgSocialFacebook.trim() || null,
+          instagram: data.pgSocialInstagram.trim() || null,
           contact_phone: data.contactPhone.trim(),
           contact_email: data.contactEmail.trim(),
-          election_year: pgYear,
         })
         .select("id")
         .single();
@@ -458,9 +431,9 @@ export default function NewCommitteePage() {
         political_group_id: pgRow.id,
         treasurer_name: null,
         mailing_address: data.mailingAddress.trim(),
-        filing_jurisdiction_type: data.filingJurisdictionType as JurisdictionType,
-        filing_jurisdiction_name: data.filingJurisdictionName.trim(),
-        filing_status: data.filingStatus.trim(),
+        filing_jurisdiction_type: "lieutenant_governor",
+        filing_jurisdiction_name: null,
+        filing_status: null,
         contribution_limit: limitNum,
       });
 
@@ -554,7 +527,7 @@ export default function NewCommitteePage() {
                   Political Group
                 </p>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                  PAC, ballot committee, 527, or other political organization
+                  Utah PAC, PIC, party, labor org, or independent expenditures
                 </p>
               </button>
               <div className="relative rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/50 p-4 opacity-60 cursor-not-allowed">
@@ -856,32 +829,6 @@ export default function NewCommitteePage() {
                 ) : null}
               </div>
             </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="lf" className={labelClass}>
-                  Leader first name{" "}
-                  <span className="font-normal text-neutral-500">(optional)</span>
-                </label>
-                <input
-                  id="lf"
-                  value={data.pgLeaderFirstName}
-                  onChange={(e) => update("pgLeaderFirstName", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="ll" className={labelClass}>
-                  Leader last name{" "}
-                  <span className="font-normal text-neutral-500">(optional)</span>
-                </label>
-                <input
-                  id="ll"
-                  value={data.pgLeaderLastName}
-                  onChange={(e) => update("pgLeaderLastName", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-            </div>
             <div>
               <label htmlFor="gtype" className={labelClass}>
                 Group type
@@ -893,9 +840,9 @@ export default function NewCommitteePage() {
                 className={inputClass}
               >
                 <option value="">Select…</option>
-                {GROUP_TYPES.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
+                {PG_GROUP_TYPE_OPTIONS.map((g) => (
+                  <option key={g.value} value={g.value}>
+                    {g.label}
                   </option>
                 ))}
               </select>
@@ -904,43 +851,18 @@ export default function NewCommitteePage() {
               ) : null}
             </div>
             <div>
-              <label htmlFor="mission" className={labelClass}>
-                Mission statement{" "}
-                <span className="font-normal text-neutral-500">(optional)</span>
-              </label>
-              <textarea
-                id="mission"
-                rows={3}
-                value={data.pgMission}
-                onChange={(e) => update("pgMission", e.target.value)}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="regid" className={labelClass}>
-                Regulatory ID if required by your jurisdiction{" "}
+              <label htmlFor="pg-folder" className={labelClass}>
+                Link to your Entity folder{" "}
                 <span className="font-normal text-neutral-500">(optional)</span>
               </label>
               <input
-                id="regid"
-                value={data.pgRegulatoryId}
-                onChange={(e) => update("pgRegulatoryId", e.target.value)}
+                id="pg-folder"
+                type="text"
+                inputMode="url"
+                value={data.pgEntityFolderLink}
+                onChange={(e) => update("pgEntityFolderLink", e.target.value)}
                 className={inputClass}
-              />
-            </div>
-            <div>
-              <label htmlFor="pgyear" className={labelClass}>
-                Election year{" "}
-                <span className="font-normal text-neutral-500">(optional)</span>
-              </label>
-              <input
-                id="pgyear"
-                type="number"
-                min={1900}
-                max={2100}
-                value={data.pgElectionYear}
-                onChange={(e) => update("pgElectionYear", e.target.value)}
-                className={inputClass}
+                placeholder="https://…"
               />
             </div>
             <div className="flex justify-between gap-3 pt-4">
@@ -1206,19 +1128,7 @@ export default function NewCommitteePage() {
                 className={inputClass}
               />
             </div>
-            <div className="grid sm:grid-cols-3 gap-3">
-              <div>
-                <label htmlFor="tw" className={labelClass}>
-                  Twitter / X{" "}
-                  <span className="font-normal text-neutral-500">(optional)</span>
-                </label>
-                <input
-                  id="tw"
-                  value={data.pgSocialTwitter}
-                  onChange={(e) => update("pgSocialTwitter", e.target.value)}
-                  className={inputClass}
-                />
-              </div>
+            <div className="grid sm:grid-cols-2 gap-3">
               <div>
                 <label htmlFor="fb" className={labelClass}>
                   Facebook{" "}
@@ -1275,63 +1185,6 @@ export default function NewCommitteePage() {
               {errors.contactEmail ? (
                 <p className="text-sm text-red-600 dark:text-red-400 mt-1">
                   {errors.contactEmail}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="pfjtype" className={labelClass}>
-                Filing jurisdiction type
-              </label>
-              <select
-                id="pfjtype"
-                value={data.filingJurisdictionType}
-                onChange={(e) =>
-                  update("filingJurisdictionType", e.target.value as JurisdictionType)
-                }
-                className={inputClass}
-              >
-                <option value="">Select…</option>
-                {JURISDICTION_TYPE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {errors.filingJurisdictionType ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.filingJurisdictionType}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="pfjname" className={labelClass}>
-                Filing jurisdiction name
-              </label>
-              <input
-                id="pfjname"
-                value={data.filingJurisdictionName}
-                onChange={(e) => update("filingJurisdictionName", e.target.value)}
-                className={inputClass}
-              />
-              {errors.filingJurisdictionName ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.filingJurisdictionName}
-                </p>
-              ) : null}
-            </div>
-            <div>
-              <label htmlFor="pfstat" className={labelClass}>
-                Filing status
-              </label>
-              <input
-                id="pfstat"
-                value={data.filingStatus}
-                onChange={(e) => update("filingStatus", e.target.value)}
-                className={inputClass}
-              />
-              {errors.filingStatus ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.filingStatus}
                 </p>
               ) : null}
             </div>
@@ -1469,17 +1322,16 @@ export default function NewCommitteePage() {
                     value={`${data.pgApplicantFirstName} ${data.pgApplicantLastName}`}
                   />
                   <ReviewRow
-                    label="Leader"
+                    label="Group type"
                     value={
-                      [data.pgLeaderFirstName, data.pgLeaderLastName]
-                        .filter(Boolean)
-                        .join(" ") || "—"
+                      PG_GROUP_TYPE_OPTIONS.find((o) => o.value === data.pgType)
+                        ?.label ?? data.pgType
                     }
                   />
-                  <ReviewRow label="Group type" value={data.pgType} />
-                  <ReviewRow label="Mission" value={data.pgMission || "—"} />
-                  <ReviewRow label="Regulatory ID" value={data.pgRegulatoryId || "—"} />
-                  <ReviewRow label="Election year" value={data.pgElectionYear || "—"} />
+                  <ReviewRow
+                    label="Entity folder link"
+                    value={data.pgEntityFolderLink || "—"}
+                  />
                 </dl>
               )}
             </section>
@@ -1507,10 +1359,6 @@ export default function NewCommitteePage() {
                 {data.entityType === "political_group" ? (
                   <>
                     <ReviewRow
-                      label="Twitter / X"
-                      value={data.pgSocialTwitter || "—"}
-                    />
-                    <ReviewRow
                       label="Facebook"
                       value={data.pgSocialFacebook || "—"}
                     />
@@ -1522,19 +1370,28 @@ export default function NewCommitteePage() {
                 ) : null}
                 <ReviewRow label="Contact phone" value={data.contactPhone} />
                 <ReviewRow label="Contact email" value={data.contactEmail} />
-                <ReviewRow
-                  label="Filing jurisdiction type"
-                  value={
-                    JURISDICTION_TYPE_OPTIONS.find(
-                      (o) => o.value === data.filingJurisdictionType
-                    )?.label ?? "—"
-                  }
-                />
-                <ReviewRow
-                  label="Filing jurisdiction name"
-                  value={data.filingJurisdictionName}
-                />
-                <ReviewRow label="Filing status" value={data.filingStatus} />
+                {data.entityType === "candidate" ? (
+                  <>
+                    <ReviewRow
+                      label="Filing jurisdiction type"
+                      value={
+                        JURISDICTION_TYPE_OPTIONS.find(
+                          (o) => o.value === data.filingJurisdictionType
+                        )?.label ?? "—"
+                      }
+                    />
+                    <ReviewRow
+                      label="Filing jurisdiction name"
+                      value={data.filingJurisdictionName}
+                    />
+                    <ReviewRow label="Filing status" value={data.filingStatus} />
+                  </>
+                ) : (
+                  <ReviewRow
+                    label="Filing jurisdiction"
+                    value="Lieutenant Governor (Utah)"
+                  />
+                )}
                 <ReviewRow
                   label="Contribution limit"
                   value={data.contributionLimit || "—"}

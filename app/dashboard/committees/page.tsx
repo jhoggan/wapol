@@ -19,9 +19,9 @@ type CommitteeRow = {
   id: string;
   entity_type: string;
   treasurer_name: string | null;
-  filing_jurisdiction_type: string;
-  filing_jurisdiction_name: string;
-  filing_status: string;
+  filing_jurisdiction_type: string | null;
+  filing_jurisdiction_name: string | null;
+  filing_status: string | null;
   candidates: CandidateEmbed | CandidateEmbed[] | null;
   political_groups: PoliticalGroupEmbed | PoliticalGroupEmbed[] | null;
 };
@@ -160,16 +160,20 @@ export default async function CommitteesPage() {
                         {raceLabel}
                       </td>
                       <td className="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">
-                        {jurisdictionTypeLabel(row.filing_jurisdiction_type)}
+                        {row.filing_jurisdiction_type
+                          ? jurisdictionTypeLabel(row.filing_jurisdiction_type)
+                          : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">
-                        {row.filing_jurisdiction_name}
+                        {row.filing_jurisdiction_name?.trim()
+                          ? row.filing_jurisdiction_name
+                          : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">
                         {row.treasurer_name?.trim() ? row.treasurer_name : "—"}
                       </td>
                       <td className="px-4 py-2.5 text-neutral-600 dark:text-neutral-300">
-                        {row.filing_status}
+                        {row.filing_status?.trim() ? row.filing_status : "—"}
                       </td>
                     </tr>
                   );
