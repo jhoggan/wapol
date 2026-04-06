@@ -38,9 +38,3 @@ next-env.d.ts
 
 # agent skills (e.g. npx skills add supabase/agent-skills)
 .agents/
-
-# Cursor local files; keep shared config committable
-.cursor/*
-!.cursor/mcp.json
-!.cursor/rules/
-!.cursor/rules/**
