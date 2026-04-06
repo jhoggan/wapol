@@ -1,10 +1,18 @@
 import { redirect } from "next/navigation";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { SelectCommitteePrompt } from "@/components/dashboard/select-committee-prompt";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { getCommitteeIdsForUser } from "@/lib/dashboard/scope";
+import { getDashboardCommittees } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function DashboardOverviewPage() {
+export default async function DashboardOverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ committee?: string }>;
+}) {
+  const { committee: committeeParam } = await searchParams;
+  const committee = committeeParam?.trim() ?? "";
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -12,99 +20,101 @@ export default async function DashboardOverviewPage() {
 
   if (!user) return null;
 
-  const { count: committeeCount, error: committeeCountError } = await supabase
-    .from("committees")
-    .select("*", { count: "exact", head: true });
+  const committees = await getDashboardCommittees(supabase);
 
-  if (!committeeCountError && (committeeCount ?? 0) === 0) {
+  if (committees.length === 0) {
     redirect("/dashboard/committees/new");
   }
 
-  const committeeIds = await getCommitteeIdsForUser(supabase, user.id);
+  const idSet = new Set(committees.map((c) => c.id));
+  if (!committee || !idSet.has(committee)) {
+    return (
+      <SelectCommitteePrompt
+        title="Overview"
+        description="Choose a committee from the picker to view this dashboard."
+      />
+    );
+  }
+
   const today = new Date().toISOString().slice(0, 10);
   const in30 = new Date();
   in30.setUTCDate(in30.getUTCDate() + 30);
   const in30Str = in30.toISOString().slice(0, 10);
 
-  let totalContributions = 0;
-  let totalExpenditures = 0;
-  let upcomingDeadlineCount = 0;
-  const recentContributions: {
-    id: string;
-    donor_full_name: string;
-    amount: string;
-    date: string;
-    payment_method: string;
-  }[] = [];
-  const upcomingDeadlines: {
-    id: string;
-    deadline_name: string;
-    due_date: string;
-    filing_period_start: string;
-    filing_period_end: string;
-  }[] = [];
+  const { data: contribAmounts } = await supabase
+    .from("contributions")
+    .select("amount")
+    .eq("committee_id", committee);
 
-  if (committeeIds.length > 0) {
-    const { data: contribAmounts } = await supabase
-      .from("contributions")
-      .select("amount")
-      .in("committee_id", committeeIds);
+  const totalContributions =
+    contribAmounts?.reduce((s, r) => s + Number(r.amount), 0) ?? 0;
 
-    totalContributions =
-      contribAmounts?.reduce((s, r) => s + Number(r.amount), 0) ?? 0;
+  const { data: expAmounts } = await supabase
+    .from("expenditures")
+    .select("amount")
+    .eq("committee_id", committee);
 
-    const { data: expAmounts } = await supabase
-      .from("expenditures")
-      .select("amount")
-      .in("committee_id", committeeIds);
+  const totalExpenditures =
+    expAmounts?.reduce((s, r) => s + Number(r.amount), 0) ?? 0;
 
-    totalExpenditures =
-      expAmounts?.reduce((s, r) => s + Number(r.amount), 0) ?? 0;
+  const { count } = await supabase
+    .from("filing_deadlines")
+    .select("*", { count: "exact", head: true })
+    .eq("committee_id", committee)
+    .eq("completed", false)
+    .gte("due_date", today)
+    .lte("due_date", in30Str);
 
-    const { count } = await supabase
-      .from("filing_deadlines")
-      .select("*", { count: "exact", head: true })
-      .in("committee_id", committeeIds)
-      .eq("completed", false)
-      .gte("due_date", today)
-      .lte("due_date", in30Str);
+  const upcomingDeadlineCount = count ?? 0;
 
-    upcomingDeadlineCount = count ?? 0;
+  const { data: recent } = await supabase
+    .from("contributions")
+    .select("id, donor_full_name, amount, date, payment_method")
+    .eq("committee_id", committee)
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(5);
 
-    const { data: recent } = await supabase
-      .from("contributions")
-      .select("id, donor_full_name, amount, date, payment_method")
-      .in("committee_id", committeeIds)
-      .order("date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(5);
+  const recentContributions = recent ?? [];
 
-    if (recent) recentContributions.push(...recent);
+  const { data: deadlines } = await supabase
+    .from("filing_deadlines")
+    .select(
+      "id, deadline_name, due_date, filing_period_start, filing_period_end"
+    )
+    .eq("committee_id", committee)
+    .eq("completed", false)
+    .order("due_date", { ascending: true })
+    .limit(10);
 
-    const { data: deadlines } = await supabase
-      .from("filing_deadlines")
-      .select(
-        "id, deadline_name, due_date, filing_period_start, filing_period_end"
-      )
-      .in("committee_id", committeeIds)
-      .eq("completed", false)
-      .order("due_date", { ascending: true })
-      .limit(10);
-
-    if (deadlines) upcomingDeadlines.push(...deadlines);
-  }
+  const upcomingDeadlines = deadlines ?? [];
 
   const cashOnHand = totalContributions - totalExpenditures;
 
+  const activeLabel =
+    committees.find((c) => c.id === committee)?.committeeName ?? "this committee";
+
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-          Overview
-        </h1>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-          Financial summary and upcoming activity for your committees.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+            Overview
+          </h1>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+            Financial summary and upcoming activity for{" "}
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">
+              {activeLabel}
+            </span>
+            .
+          </p>
+        </div>
+        <a
+          href="/dashboard/committees/new"
+          className="rounded-lg border border-neutral-300 dark:border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80"
+        >
+          New committee
+        </a>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

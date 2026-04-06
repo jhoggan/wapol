@@ -154,6 +154,12 @@ const CONSTITUTIONAL_OFFICES = [
   "State Treasurer",
 ] as const;
 
+const FEDERAL_OFFICE_OPTIONS = [
+  "U.S. House",
+  "U.S. Senate",
+  "President",
+] as const;
+
 const PG_GROUP_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: "PAC", label: "Political Action Committee (PAC)" },
   { value: "PIC", label: "Political Issue Committee (PIC)" },
@@ -167,7 +173,7 @@ const PG_GROUP_TYPE_OPTIONS: { value: string; label: string }[] = [
 
 type EntityChoice = "candidate" | "political_group";
 
-type CampaignLevel = "state" | "county" | "municipal" | "";
+type CampaignLevel = "federal" | "state" | "county" | "municipal" | "";
 
 type FormData = {
   entityType: EntityChoice | null;
@@ -176,6 +182,8 @@ type FormData = {
   lastName: string;
   party: string;
   campaignLevel: CampaignLevel;
+  federalOffice: string;
+  federalState: string;
   utahCounty: string;
   officeName: string;
   raceType: RaceType | "";
@@ -212,6 +220,8 @@ const initialForm: FormData = {
   lastName: "",
   party: "",
   campaignLevel: "",
+  federalOffice: "",
+  federalState: "",
   utahCounty: "",
   officeName: "",
   raceType: "",
@@ -307,15 +317,32 @@ export default function NewCommitteePage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [waitlistSaving, setWaitlistSaving] = useState(false);
 
   const update = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
     setData((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const raceOptions = useMemo(() => {
-    if (!data.campaignLevel) return [];
-    return RACE_OPTIONS_BY_LEVEL[data.campaignLevel] ?? [];
+    const level = data.campaignLevel;
+    if (!level || level === "federal") {
+      return [];
+    }
+    return RACE_OPTIONS_BY_LEVEL[level] ?? [];
   }, [data.campaignLevel]);
+
+  const showCampaignLevelPicker = useMemo(
+    () =>
+      data.entityType === "candidate" &&
+      (data.party === "Democratic Party" ||
+        (data.party === "Unaffiliated" && data.identifiesLeftLeaning === true)),
+    [data.entityType, data.party, data.identifiesLeftLeaning]
+  );
+
+  const showUtahCandidateStepFields =
+    showCampaignLevelPicker &&
+    data.campaignLevel !== "" &&
+    data.campaignLevel !== "federal";
 
   useEffect(() => {
     if (data.entityType !== "candidate" || !data.useTreasurerAsSelf) return;
@@ -343,9 +370,31 @@ export default function NewCommitteePage() {
         if (!data.firstName.trim()) e.firstName = "Required.";
         if (!data.lastName.trim()) e.lastName = "Required.";
         if (!data.party.trim()) e.party = "Required.";
+
+        const repBlock = data.party === "Republican Party";
+        const unaffNoBlock =
+          data.party === "Unaffiliated" &&
+          data.identifiesLeftLeaning === false;
+        const fedBlock = data.campaignLevel === "federal";
+
+        if (repBlock || unaffNoBlock) {
+          if (!data.contactEmail.trim()) e.contactEmail = "Required.";
+          setErrors(e);
+          return Object.keys(e).length === 0;
+        }
+
+        if (fedBlock) {
+          if (!data.contactEmail.trim()) e.contactEmail = "Required.";
+          if (!data.federalOffice.trim()) e.federalOffice = "Select office.";
+          if (!data.federalState.trim()) e.federalState = "Select state.";
+          setErrors(e);
+          return Object.keys(e).length === 0;
+        }
+
         if (!data.campaignLevel) e.campaignLevel = "Select campaign level.";
         if (
-          (data.campaignLevel === "county" || data.campaignLevel === "municipal") &&
+          (data.campaignLevel === "county" ||
+            data.campaignLevel === "municipal") &&
           !data.utahCounty.trim()
         ) {
           e.utahCounty = "Select a county.";
@@ -410,6 +459,14 @@ export default function NewCommitteePage() {
         return;
       }
     }
+    if (step === 3 && data.entityType === "candidate") {
+      const blocked =
+        data.party === "Republican Party" ||
+        (data.party === "Unaffiliated" &&
+          data.identifiesLeftLeaning === false) ||
+        data.campaignLevel === "federal";
+      if (blocked) return;
+    }
     if (!validateStep(step)) return;
     setStep((x) => Math.min(TOTAL_STEPS, x + 1));
   }
@@ -430,12 +487,68 @@ export default function NewCommitteePage() {
     update("campaignLevel", level);
     update("raceType", "");
     update("officeName", "");
+    if (level === "federal") {
+      update("utahCounty", "");
+      update("federalOffice", "");
+      update("federalState", "");
+      return;
+    }
+    update("federalOffice", "");
+    update("federalState", "");
     if (level !== "county" && level !== "municipal") {
       update("utahCounty", "");
     }
-    if (level && RACE_OPTIONS_BY_LEVEL[level]?.length === 1) {
-      update("raceType", RACE_OPTIONS_BY_LEVEL[level][0].value);
+    if (
+      level &&
+      RACE_OPTIONS_BY_LEVEL[level as "state" | "county" | "municipal"]?.length ===
+        1
+    ) {
+      update(
+        "raceType",
+        RACE_OPTIONS_BY_LEVEL[level as "state" | "county" | "municipal"][0]
+          .value
+      );
     }
+  }
+
+  async function submitCandidateWaitlist(opts: {
+    entity_type: string | null;
+    party: string | null;
+    notes: string | null;
+    state: string;
+  }) {
+    setSubmitError(null);
+    if (!data.firstName.trim() || !data.lastName.trim()) {
+      setSubmitError("First and last name are required.");
+      return;
+    }
+    if (!data.contactEmail.trim()) {
+      setSubmitError("Email is required.");
+      return;
+    }
+    if (opts.entity_type === "federal") {
+      if (!data.federalOffice.trim() || !data.federalState.trim()) {
+        setSubmitError("Select federal office and state.");
+        return;
+      }
+    }
+    setWaitlistSaving(true);
+    const supabase = createClient();
+    const { error } = await supabase.from("waitlist").insert({
+      first_name: data.firstName.trim(),
+      last_name: data.lastName.trim(),
+      email: data.contactEmail.trim(),
+      state: opts.state,
+      entity_type: opts.entity_type,
+      party: opts.party,
+      notes: opts.notes,
+    });
+    setWaitlistSaving(false);
+    if (error) {
+      setSubmitError(error.message);
+      return;
+    }
+    router.push("/waitlist/confirmation");
   }
 
   function handleRaceType(rt: RaceType) {
@@ -610,10 +723,10 @@ export default function NewCommitteePage() {
     <div className="max-w-2xl mx-auto px-4 pb-16">
       <div className="mb-8">
         <Link
-          href="/dashboard/committees"
+          href="/dashboard"
           className="text-sm text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
         >
-          ← Back to committees
+          ← Back to dashboard
         </Link>
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 mt-4">
           New committee
@@ -683,7 +796,8 @@ export default function NewCommitteePage() {
                   Political Group
                 </p>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                  Utah PAC, PIC, party, labor org, or independent expenditures
+                  Political Group — PAC, political issue committee, political
+                  party, labor organization, or independent expenditure committee
                 </p>
               </button>
               <div className="relative rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950/50 p-4 opacity-60 cursor-not-allowed">
@@ -830,18 +944,46 @@ export default function NewCommitteePage() {
               ) : null}
             </div>
             {data.party === "Republican Party" ? (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+              <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-4">
                 <p className="text-sm text-neutral-800 dark:text-neutral-200">
                   Wasatch Political currently works with Democratic and unaffiliated
                   candidates. We&apos;re not able to support Republican campaigns at
-                  this time.
+                  this time. Join the waitlist and we&apos;ll reach out when we can
+                  help.
                 </p>
-                <Link
-                  href="/waitlist"
-                  className="inline-flex rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium hover:opacity-90"
+                <div>
+                  <label htmlFor="wl-em-rep" className={labelClass}>
+                    Email
+                  </label>
+                  <input
+                    id="wl-em-rep"
+                    type="email"
+                    value={data.contactEmail}
+                    onChange={(e) => update("contactEmail", e.target.value)}
+                    className={inputClass}
+                    placeholder="you@example.com"
+                  />
+                  {errors.contactEmail ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.contactEmail}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={waitlistSaving}
+                  onClick={() =>
+                    submitCandidateWaitlist({
+                      entity_type: "candidate",
+                      party: "Republican Party",
+                      notes: null,
+                      state: "Utah",
+                    })
+                  }
+                  className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
                 >
-                  Join our waitlist
-                </Link>
+                  {waitlistSaving ? "Submitting…" : "Join waitlist"}
+                </button>
               </div>
             ) : null}
             {data.party === "Unaffiliated" ? (
@@ -876,30 +1018,165 @@ export default function NewCommitteePage() {
                 </div>
               </div>
             ) : null}
-            <div>
-              <label htmlFor="clevel" className={labelClass}>
-                Campaign level
-              </label>
-              <select
-                id="clevel"
-                value={data.campaignLevel}
-                onChange={(e) =>
-                  handleCampaignLevel(e.target.value as CampaignLevel)
-                }
-                className={inputClass}
-              >
-                <option value="">Select…</option>
-                <option value="state">State</option>
-                <option value="county">County</option>
-                <option value="municipal">Municipal</option>
-              </select>
-              {errors.campaignLevel ? (
-                <p className="text-sm text-red-600 dark:text-red-400 mt-1">
-                  {errors.campaignLevel}
+            {data.party === "Unaffiliated" &&
+            data.identifiesLeftLeaning === false ? (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-4">
+                <p className="text-sm text-neutral-800 dark:text-neutral-200">
+                  Wasatch Political currently works with Democratic and
+                  left-leaning unaffiliated candidates. We&apos;re not able to
+                  support your campaign at this time. Join the waitlist and
+                  we&apos;ll be in touch if that changes.
                 </p>
-              ) : null}
-            </div>
-            {(data.campaignLevel === "county" ||
+                <div>
+                  <label htmlFor="wl-em-un" className={labelClass}>
+                    Email
+                  </label>
+                  <input
+                    id="wl-em-un"
+                    type="email"
+                    value={data.contactEmail}
+                    onChange={(e) => update("contactEmail", e.target.value)}
+                    className={inputClass}
+                    placeholder="you@example.com"
+                  />
+                  {errors.contactEmail ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.contactEmail}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={waitlistSaving}
+                  onClick={() =>
+                    submitCandidateWaitlist({
+                      entity_type: "candidate",
+                      party: "Unaffiliated - Not Left Leaning",
+                      notes: null,
+                      state: "Utah",
+                    })
+                  }
+                  className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {waitlistSaving ? "Submitting…" : "Join waitlist"}
+                </button>
+              </div>
+            ) : null}
+            {showCampaignLevelPicker ? (
+              <div>
+                <label htmlFor="clevel" className={labelClass}>
+                  Campaign level
+                </label>
+                <select
+                  id="clevel"
+                  value={data.campaignLevel}
+                  onChange={(e) =>
+                    handleCampaignLevel(e.target.value as CampaignLevel)
+                  }
+                  className={inputClass}
+                >
+                  <option value="">Select…</option>
+                  <option value="federal">Federal</option>
+                  <option value="state">State</option>
+                  <option value="county">County</option>
+                  <option value="municipal">Municipal</option>
+                </select>
+                {errors.campaignLevel ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    {errors.campaignLevel}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {showCampaignLevelPicker && data.campaignLevel === "federal" ? (
+              <div className="space-y-4 rounded-lg border border-blue-200 dark:border-blue-900/40 bg-blue-50/80 dark:bg-blue-950/20 p-4">
+                <p className="text-sm font-medium text-blue-950 dark:text-blue-100">
+                  Federal campaigns are not yet fully supported. Submit your info
+                  and we&apos;ll reach out when we&apos;re ready.
+                </p>
+                <div>
+                  <label htmlFor="fed-office" className={labelClass}>
+                    Federal office
+                  </label>
+                  <select
+                    id="fed-office"
+                    value={data.federalOffice}
+                    onChange={(e) => update("federalOffice", e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Select…</option>
+                    {FEDERAL_OFFICE_OPTIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.federalOffice ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.federalOffice}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="fed-state" className={labelClass}>
+                    State you are running in
+                  </label>
+                  <select
+                    id="fed-state"
+                    value={data.federalState}
+                    onChange={(e) => update("federalState", e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Select…</option>
+                    {US_JURISDICTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.federalState ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.federalState}
+                    </p>
+                  ) : null}
+                </div>
+                <div>
+                  <label htmlFor="wl-em-fed" className={labelClass}>
+                    Email
+                  </label>
+                  <input
+                    id="wl-em-fed"
+                    type="email"
+                    value={data.contactEmail}
+                    onChange={(e) => update("contactEmail", e.target.value)}
+                    className={inputClass}
+                    placeholder="you@example.com"
+                  />
+                  {errors.contactEmail ? (
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                      {errors.contactEmail}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  disabled={waitlistSaving}
+                  onClick={() =>
+                    submitCandidateWaitlist({
+                      entity_type: "federal",
+                      party: data.party.trim() || null,
+                      notes: `${data.federalOffice.trim()} — ${data.federalState.trim()}`,
+                      state: data.federalState.trim() || "Utah",
+                    })
+                  }
+                  className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                >
+                  {waitlistSaving ? "Submitting…" : "Join waitlist"}
+                </button>
+              </div>
+            ) : null}
+            {showUtahCandidateStepFields &&
+            (data.campaignLevel === "county" ||
               data.campaignLevel === "municipal") && (
               <div>
                 <label htmlFor="utah-co" className={labelClass}>
@@ -925,6 +1202,8 @@ export default function NewCommitteePage() {
                 ) : null}
               </div>
             )}
+            {showUtahCandidateStepFields ? (
+              <>
             <div>
               <label htmlFor="rtype" className={labelClass}>
                 Race type
@@ -1175,6 +1454,8 @@ export default function NewCommitteePage() {
                 </p>
               ) : null}
             </div>
+              </>
+            ) : null}
 
             <div className="flex justify-between gap-3 pt-4">
               <button
@@ -1187,7 +1468,12 @@ export default function NewCommitteePage() {
               <button
                 type="button"
                 onClick={goNext}
-                disabled={data.party === "Republican Party"}
+                disabled={
+                  data.party === "Republican Party" ||
+                  (data.party === "Unaffiliated" &&
+                    data.identifiesLeftLeaning === false) ||
+                  data.campaignLevel === "federal"
+                }
                 className="rounded-lg bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 px-5 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Continue

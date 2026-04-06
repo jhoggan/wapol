@@ -1,5 +1,6 @@
 "use client";
 
+import type { DashboardCommittee } from "@/lib/dashboard/scope";
 import {
   createContext,
   useCallback,
@@ -8,14 +9,14 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { CommitteeOption } from "@/lib/dashboard/scope";
 
 const STORAGE_KEY = "wapol:activeCommitteeId";
 
 type ActiveCommitteeContextValue = {
-  committees: CommitteeOption[];
+  committees: DashboardCommittee[];
   activeCommitteeId: string | null;
   setActiveCommitteeId: (id: string | null) => void;
+  hasHydrated: boolean;
 };
 
 const ActiveCommitteeContext = createContext<ActiveCommitteeContextValue | null>(
@@ -26,12 +27,13 @@ export function ActiveCommitteeProvider({
   committees,
   children,
 }: {
-  committees: CommitteeOption[];
+  committees: DashboardCommittee[];
   children: React.ReactNode;
 }) {
   const [activeCommitteeId, setActiveCommitteeIdState] = useState<string | null>(
     null
   );
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   const idSet = useMemo(
     () => new Set(committees.map((c) => c.id)),
@@ -47,6 +49,7 @@ export function ActiveCommitteeProvider({
     } catch {
       /* ignore */
     }
+    setHasHydrated(true);
   }, [idSet]);
 
   const setActiveCommitteeId = useCallback((id: string | null) => {
@@ -75,8 +78,9 @@ export function ActiveCommitteeProvider({
       committees,
       activeCommitteeId,
       setActiveCommitteeId,
+      hasHydrated,
     }),
-    [committees, activeCommitteeId, setActiveCommitteeId]
+    [committees, activeCommitteeId, setActiveCommitteeId, hasHydrated]
   );
 
   return (

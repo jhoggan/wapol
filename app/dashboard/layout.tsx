@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
-import { getCommitteesForSelect } from "@/lib/dashboard/scope";
+import { getDashboardCommittees } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -18,7 +18,7 @@ export default async function DashboardLayout({
   }
 
   const email = user.email ?? "Account";
-  const committees = await getCommitteesForSelect(supabase);
+  const committees = await getDashboardCommittees(supabase);
 
   return (
     <DashboardShell email={email} committees={committees}>
