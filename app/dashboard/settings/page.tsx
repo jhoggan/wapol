@@ -1,6 +1,7 @@
 import { ActBlueSettingsSection } from "@/components/dashboard/actblue-settings-section";
 import { SettingsClient } from "@/components/dashboard/settings-client";
 import { SelectCommitteePrompt } from "@/components/dashboard/select-committee-prompt";
+import { parseActBlueCredentialsMeta } from "@/lib/dashboard/actblue-credentials-meta";
 import { getDashboardCommittees } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
 
@@ -54,17 +55,20 @@ export default async function SettingsPage({
   const { data: actblueRow } = showActBlue
     ? await supabase
         .from("committees")
-        .select(
-          "actblue_client_uuid, actblue_client_secret, actblue_last_synced_at"
-        )
+        .select("actblue_client_uuid, actblue_last_synced_at")
         .eq("id", committee)
         .maybeSingle()
     : { data: null as null };
 
-  const secret = actblueRow?.actblue_client_secret?.trim() ?? "";
-  const hasSavedSecret = secret.length > 0;
-  const secretLast4 =
-    hasSavedSecret && secret.length >= 4 ? secret.slice(-4) : null;
+  const { data: abMetaRaw } = showActBlue
+    ? await supabase.rpc("committee_actblue_credentials_meta", {
+        p_committee_id: committee,
+      })
+    : { data: null as null };
+
+  const abMeta = parseActBlueCredentialsMeta(abMetaRaw);
+  const hasSavedSecret = abMeta.configured;
+  const secretLast4 = abMeta.secretLastFour;
 
   return (
     <SettingsClient

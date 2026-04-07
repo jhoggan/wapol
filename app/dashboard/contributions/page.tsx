@@ -1,5 +1,6 @@
 import { ContributionsClient } from "@/components/dashboard/contributions-client";
 import { SelectCommitteePrompt } from "@/components/dashboard/select-committee-prompt";
+import { parseActBlueCredentialsMeta } from "@/lib/dashboard/actblue-credentials-meta";
 import { getCommitteesForSelect } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
 
