@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/dashboard/actions";
 import type { DashboardCommittee } from "@/lib/dashboard/scope";
 import {
@@ -75,40 +75,113 @@ function linkActive(pathname: string, href: string) {
   return pathname === pathOnly || pathname.startsWith(`${pathOnly}/`);
 }
 
+function isComplianceChildPath(pathname: string) {
+  return (
+    pathname === "/dashboard/contributions" ||
+    pathname === "/dashboard/expenditures" ||
+    pathname === "/dashboard/deadlines"
+  );
+}
+
+const linkBase =
+  "block rounded-lg px-3 py-2 text-sm font-medium transition-colors text-left w-full";
+const linkInactive =
+  "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800/80";
+const linkActiveCls =
+  "bg-neutral-200 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100";
+
 function DashboardNavInner() {
   const pathname = usePathname();
   const { activeCommitteeId } = useActiveCommittee();
+  const [complianceOpen, setComplianceOpen] = useState(() =>
+    isComplianceChildPath(pathname)
+  );
+  const prevPathname = useRef(pathname);
+
+  useEffect(() => {
+    const prev = prevPathname.current;
+    prevPathname.current = pathname;
+    const nowC = isComplianceChildPath(pathname);
+    const prevC = isComplianceChildPath(prev);
+    if (nowC && !prevC) {
+      setComplianceOpen(true);
+    }
+    if (!nowC && prevC) {
+      setComplianceOpen(false);
+    }
+  }, [pathname]);
 
   if (!activeCommitteeId) {
     return null;
   }
 
   const q = `committee=${encodeURIComponent(activeCommitteeId)}`;
-  const links = [
-    { href: `/dashboard?${q}`, label: "Overview" },
+  const overviewHref = `/dashboard?${q}`;
+  const complianceSub = [
     { href: `/dashboard/contributions?${q}`, label: "Contributions" },
     { href: `/dashboard/expenditures?${q}`, label: "Expenditures" },
     { href: `/dashboard/deadlines?${q}`, label: "Deadlines" },
   ] as const;
 
+  const complianceSectionActive = complianceSub.some((s) =>
+    linkActive(pathname, s.href)
+  );
+
   return (
     <nav className="flex flex-col gap-1">
-      {links.map(({ href, label }) => {
-        const active = linkActive(pathname, href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              active
-                ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100"
-                : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800/80"
+      <Link
+        href={overviewHref}
+        className={`${linkBase} ${
+          linkActive(pathname, overviewHref) ? linkActiveCls : linkInactive
+        }`}
+      >
+        Overview
+      </Link>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setComplianceOpen((o) => !o)}
+          aria-expanded={complianceOpen}
+          className={`${linkBase} flex items-center justify-between gap-2 ${
+            complianceSectionActive ? linkActiveCls : linkInactive
+          }`}
+        >
+          <span>Compliance</span>
+          <svg
+            className={`h-4 w-4 shrink-0 text-neutral-500 transition-transform ${
+              complianceOpen ? "rotate-180" : ""
             }`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+            aria-hidden
           >
-            {label}
-          </Link>
-        );
-      })}
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+        {complianceOpen ? (
+          <div className="mt-1 ml-2 flex flex-col gap-0.5 border-l border-neutral-200 pl-2 dark:border-neutral-700">
+            {complianceSub.map(({ href, label }) => {
+              const active = linkActive(pathname, href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`${linkBase} pl-2 ${active ? linkActiveCls : linkInactive}`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
     </nav>
   );
 }
@@ -275,12 +348,12 @@ function DashboardShellInner({
             {activeCommitteeId ? (
               <Link
                 href={`/dashboard/settings?committee=${encodeURIComponent(activeCommitteeId)}`}
-                className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800/80 text-center"
+                className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800/80 text-left"
               >
                 Settings
               </Link>
             ) : (
-              <span className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-neutral-400 dark:text-neutral-500 text-center cursor-not-allowed">
+              <span className="block w-full rounded-lg px-3 py-2 text-sm font-medium text-neutral-400 dark:text-neutral-500 text-left cursor-not-allowed">
                 Settings
               </span>
             )}

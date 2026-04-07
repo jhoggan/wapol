@@ -108,10 +108,8 @@ export default async function DashboardOverviewPage({
   );
   const abMeta = parseActBlueCredentialsMeta(abMetaRaw);
 
-  const actblueUuidConfigured = Boolean(
-    committeeRow?.actblue_client_uuid?.trim()
-  );
-  const actBlueSyncEnabled = actblueUuidConfigured && abMeta.configured;
+  const actBlueSyncEnabled =
+    Boolean(committeeRow?.actblue_client_uuid?.trim()) && abMeta.configured;
 
   return (
     <div className="space-y-8">
@@ -130,20 +128,12 @@ export default async function DashboardOverviewPage({
             </span>
           </p>
         </div>
-        <div className="flex flex-col items-end gap-3 shrink-0">
-          {actblueUuidConfigured ? (
-            <OverviewCommitteeSync
-              committeeId={committee}
-              syncEnabled={actBlueSyncEnabled}
-              actblueLastSyncedAt={committeeRow?.actblue_last_synced_at ?? null}
-            />
-          ) : null}
-          <a
-            href="/dashboard/committees/new"
-            className="rounded-lg border border-neutral-300 dark:border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80"
-          >
-            New committee
-          </a>
+        <div className="shrink-0">
+          <OverviewCommitteeSync
+            committeeId={committee}
+            syncEnabled={actBlueSyncEnabled}
+            actblueLastSyncedAt={committeeRow?.actblue_last_synced_at ?? null}
+          />
         </div>
       </div>
 

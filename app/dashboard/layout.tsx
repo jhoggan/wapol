@@ -1,3 +1,4 @@
+/** Sidebar navigation is defined in `DashboardShell` (Overview, Compliance, Settings). */
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { getDashboardCommittees } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
