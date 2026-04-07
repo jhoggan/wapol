@@ -62,14 +62,18 @@ export default async function ContributionsPage({
 
   const { data: comRow } = await supabase
     .from("committees")
-    .select(
-      "actblue_last_synced_at, actblue_client_uuid, actblue_client_secret"
-    )
+    .select("actblue_last_synced_at, actblue_client_uuid")
     .eq("id", committee)
     .maybeSingle();
 
+  const { data: abMetaRaw } = await supabase.rpc(
+    "committee_actblue_credentials_meta",
+    { p_committee_id: committee }
+  );
+  const abMeta = parseActBlueCredentialsMeta(abMetaRaw);
+
   const actBlueConnected = Boolean(
-    comRow?.actblue_client_uuid?.trim() && comRow?.actblue_client_secret?.trim()
+    comRow?.actblue_client_uuid?.trim() && abMeta.configured
   );
 
   const scoped = committees.filter((c) => c.id === committee);
