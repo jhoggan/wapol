@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { OverviewCommitteeSync } from "@/components/dashboard/overview-committee-sync";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SelectCommitteePrompt } from "@/components/dashboard/select-committee-prompt";
+import { parseActBlueCredentialsMeta } from "@/lib/dashboard/actblue-credentials-meta";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { getDashboardCommittees } from "@/lib/dashboard/scope";
 import { createClient } from "@/lib/supabase/server";
@@ -94,27 +96,55 @@ export default async function DashboardOverviewPage({
   const activeLabel =
     committees.find((c) => c.id === committee)?.committeeName ?? "this committee";
 
+  const { data: committeeRow } = await supabase
+    .from("committees")
+    .select("actblue_client_uuid, actblue_last_synced_at")
+    .eq("id", committee)
+    .maybeSingle();
+
+  const { data: abMetaRaw } = await supabase.rpc(
+    "committee_actblue_credentials_meta",
+    { p_committee_id: committee }
+  );
+  const abMeta = parseActBlueCredentialsMeta(abMetaRaw);
+
+  const actblueUuidConfigured = Boolean(
+    committeeRow?.actblue_client_uuid?.trim()
+  );
+  const actBlueSyncEnabled = actblueUuidConfigured && abMeta.configured;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
             Overview
           </h1>
           <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            Financial summary and upcoming activity for{" "}
-            <span className="font-medium text-neutral-700 dark:text-neutral-300">
+            <span className="font-medium text-neutral-800 dark:text-neutral-200">
               {activeLabel}
             </span>
-            .
+            <span className="text-neutral-500 dark:text-neutral-400">
+              {" "}
+              — financial summary and upcoming activity.
+            </span>
           </p>
         </div>
-        <a
-          href="/dashboard/committees/new"
-          className="rounded-lg border border-neutral-300 dark:border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80"
-        >
-          New committee
-        </a>
+        <div className="flex flex-col items-end gap-3 shrink-0">
+          {actblueUuidConfigured ? (
+            <OverviewCommitteeSync
+              committeeId={committee}
+              syncEnabled={actBlueSyncEnabled}
+              actblueLastSyncedAt={committeeRow?.actblue_last_synced_at ?? null}
+            />
+          ) : null}
+          <a
+            href="/dashboard/committees/new"
+            className="rounded-lg border border-neutral-300 dark:border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800/80"
+          >
+            New committee
+          </a>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

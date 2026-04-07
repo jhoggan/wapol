@@ -6,16 +6,21 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Manual / API: sync a single committee. */
+/**
+ * On-demand full committee sync (POST /api/sync/committee).
+ * Payload: `{ committeeId: string }` (maps from API body `committee_id`).
+ */
 export const actblueSyncCommittee = task({
   id: "actblue-sync-committee",
   maxDuration: 900,
   run: async (payload: { committeeId: string }) => {
     const supabase = createServiceRoleClient();
-    return runActBlueSyncForCommittee({
+    const result = await runActBlueSyncForCommittee({
       supabase,
       committeeId: payload.committeeId,
     });
+    // TODO: add Teller sync here when Teller is approved
+    return result;
   },
 });
 
