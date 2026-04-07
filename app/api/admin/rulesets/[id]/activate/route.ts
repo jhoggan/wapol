@@ -54,7 +54,13 @@ export async function POST(
     q = q.eq("jurisdiction_name", rs.jurisdiction_name);
   }
 
-  await q;
+  const { error: archiveErr } = await q;
+  if (archiveErr) {
+    return NextResponse.json(
+      { error: `Failed to archive prior active ruleset: ${archiveErr.message}` },
+      { status: 500 }
+    );
+  }
 
   const nextVersion = (rs.version as number) + 1;
 

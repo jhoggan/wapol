@@ -292,7 +292,7 @@ function onboardingRaceLabel(rt: RaceType | ""): string {
 
 function candidateFilingFromForm(d: FormData): {
   type: JurisdictionType;
-  name: string;
+  name: string | null;
 } {
   const rt = d.raceType as RaceType;
   const stateRaces: RaceType[] = [
@@ -309,16 +309,16 @@ function candidateFilingFromForm(d: FormData): {
   }
   if (rt === "county" || rt === "county_school_board") {
     const co = d.utahCounty.trim();
-    return { type: "county", name: co ? `${co} County` : "" };
+    return { type: "county", name: co ? `${co} County` : null };
   }
   if (rt === "municipal") {
     const muni = d.officeName.trim();
     return {
       type: "municipal",
-      name: muni ? `${muni} City Recorder` : "",
+      name: muni ? `${muni} City Recorder` : null,
     };
   }
-  return { type: "lieutenant_governor", name: "" };
+  return { type: "lieutenant_governor", name: null };
 }
 
 export default function NewCommitteePage() {
@@ -2208,7 +2208,7 @@ export default function NewCommitteePage() {
                   <>
                     <ReviewRow
                       label="Filing jurisdiction (auto-assigned)"
-                      value={`${jurisdictionTypeLabel(candidateFilingFromForm(data).type)} — ${candidateFilingFromForm(data).name}`}
+                      value={`${jurisdictionTypeLabel(candidateFilingFromForm(data).type)} — ${candidateFilingFromForm(data).name ?? "—"}`}
                     />
                     <ReviewRow label="Filing status" value={data.filingStatus} />
                   </>

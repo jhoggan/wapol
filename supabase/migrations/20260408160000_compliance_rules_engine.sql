@@ -424,13 +424,10 @@ GRANT SELECT ON public.convention_dates TO authenticated;
 
 GRANT SELECT ON public.jurisdiction_rulesets TO authenticated;
 GRANT SELECT ON public.deadline_templates TO authenticated;
+GRANT SELECT ON public.ruleset_change_requests TO authenticated;
 
 GRANT SELECT ON public.contribution_alerts TO authenticated;
 GRANT SELECT, UPDATE ON public.notifications TO authenticated;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.jurisdiction_rulesets TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.deadline_templates TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.ruleset_change_requests TO authenticated;
 
 -- admin_users: only service_role (app checks admin via is_admin_user() RPC)
 REVOKE ALL ON public.admin_users FROM PUBLIC;
