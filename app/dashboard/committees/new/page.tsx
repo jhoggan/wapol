@@ -8,6 +8,12 @@ import {
   type JurisdictionType,
   type RaceType,
 } from "@/lib/campaign-labels";
+import { findActiveRulesetId } from "@/lib/compliance/active-ruleset";
+import {
+  fetchDistrictCountyScope,
+  parseDistrictNumber,
+} from "@/lib/compliance/district";
+import { conventionPartyKey } from "@/lib/compliance/party";
 import { createClient } from "@/lib/supabase/client";
 
 const TOTAL_STEPS = 5;
@@ -211,6 +217,8 @@ type FormData = {
   contributionLimit: string;
   pgSocialFacebook: string;
   pgSocialInstagram: string;
+  conventionDate: string;
+  conventionDateSource: "default" | "override" | "";
 };
 
 const initialForm: FormData = {
@@ -249,6 +257,8 @@ const initialForm: FormData = {
   contributionLimit: "",
   pgSocialFacebook: "",
   pgSocialInstagram: "",
+  conventionDate: "",
+  conventionDateSource: "",
 };
 
 const inputClass =
@@ -298,7 +308,8 @@ function candidateFilingFromForm(d: FormData): {
     };
   }
   if (rt === "county" || rt === "county_school_board") {
-    return { type: "county", name: d.utahCounty.trim() };
+    const co = d.utahCounty.trim();
+    return { type: "county", name: co ? `${co} County` : "" };
   }
   if (rt === "municipal") {
     const muni = d.officeName.trim();
@@ -343,6 +354,56 @@ export default function NewCommitteePage() {
     showCampaignLevelPicker &&
     data.campaignLevel !== "" &&
     data.campaignLevel !== "federal";
+
+  const showConventionFields = useMemo(
+    () =>
+      data.entityType === "candidate" &&
+      data.campaignLevel === "state" &&
+      (data.party === "Democratic Party" ||
+        data.party === "Republican Party") &&
+      (data.raceType === "state_house" || data.raceType === "state_senate"),
+    [
+      data.entityType,
+      data.campaignLevel,
+      data.party,
+      data.raceType,
+    ]
+  );
+
+  useEffect(() => {
+    if (!showConventionFields) return;
+    const supabase = createClient();
+    const year = electionYearFromForm(data);
+    const pk = conventionPartyKey(data.party);
+    if (!pk) return;
+    void (async () => {
+      const { data: row } = await supabase
+        .from("convention_dates")
+        .select("convention_date")
+        .eq("party", pk)
+        .eq("state", "Utah")
+        .eq("election_year", year)
+        .eq("jurisdiction", "statewide")
+        .maybeSingle();
+      const cd = row?.convention_date as string | undefined;
+      if (!cd) return;
+      setData((prev) => {
+        if (prev.conventionDate.trim()) return prev;
+        return {
+          ...prev,
+          conventionDate: cd,
+          conventionDateSource: "default",
+        };
+      });
+    })();
+  }, [
+    showConventionFields,
+    data.generalElectionDate,
+    data.party,
+    data.primaryElectionDate,
+    data.specialElection,
+    data.specialElectionDate,
+  ]);
 
   useEffect(() => {
     if (data.entityType !== "candidate" || !data.useTreasurerAsSelf) return;
@@ -422,6 +483,11 @@ export default function NewCommitteePage() {
         if (!data.treasurerName.trim()) e.treasurerName = "Required.";
         if (!data.mailingAddress.trim()) e.mailingAddress = "Required.";
         if (!data.filingStatus.trim()) e.filingStatus = "Required.";
+        if (showConventionFields) {
+          if (!data.conventionDate.trim()) {
+            e.conventionDate = "Convention date is required.";
+          }
+        }
         if (data.campaignLevel === "county" || data.campaignLevel === "municipal") {
           const lim = parseLimit(data.contributionLimit);
           if (data.contributionLimit.trim() !== "" && !Number.isFinite(lim)) {
@@ -442,7 +508,7 @@ export default function NewCommitteePage() {
       setErrors(e);
       return Object.keys(e).length === 0;
     },
-    [data]
+    [data, showConventionFields]
   );
 
   function goNext() {
@@ -554,6 +620,8 @@ export default function NewCommitteePage() {
   function handleRaceType(rt: RaceType) {
     update("raceType", rt);
     update("officeName", "");
+    update("conventionDate", "");
+    update("conventionDateSource", "");
   }
 
   async function handleConfirmSubmit() {
@@ -602,6 +670,44 @@ export default function NewCommitteePage() {
       const committeeLimit =
         data.campaignLevel === "state" ? null : limitNum;
 
+      const districtNum = parseDistrictNumber(
+        data.officeName,
+        data.raceType as RaceType
+      );
+      let districtCountyScope: "single_county" | "multi_county" | "statewide" | null =
+        null;
+      if (data.campaignLevel === "state") {
+        if (districtNum != null) {
+          const scope = await fetchDistrictCountyScope(supabase, {
+            raceType: data.raceType as string,
+            districtNumber: districtNum,
+          });
+          districtCountyScope = scope ?? "statewide";
+        } else {
+          districtCountyScope = "statewide";
+        }
+      }
+
+      const rulesetJurisdictionName =
+        filing.type === "lieutenant_governor" ? null : filing.name || null;
+
+      const rulesetId = await findActiveRulesetId(supabase, {
+        state: "Utah",
+        jurisdictionType: filing.type,
+        jurisdictionName: rulesetJurisdictionName,
+        electionYear: year,
+      });
+
+      const conventionOverride =
+        showConventionFields && data.conventionDateSource === "override"
+          ? data.conventionDate.trim() || null
+          : null;
+      const conventionSource = showConventionFields
+        ? data.conventionDateSource === "override"
+          ? "override"
+          : "default"
+        : null;
+
       const { data: candRow, error: cErr } = await supabase
         .from("candidates")
         .insert({
@@ -639,6 +745,10 @@ export default function NewCommitteePage() {
           regulatory_state: "Utah",
           election_year: year,
           committee_name: data.legalName.trim(),
+          convention_date_override: conventionOverride,
+          convention_date_source: conventionSource,
+          district_county_scope: districtCountyScope,
+          district_number: districtNum,
         })
         .select("id")
         .single();
@@ -649,23 +759,40 @@ export default function NewCommitteePage() {
         return;
       }
 
-      const { error: comErr } = await supabase.from("committees").insert({
-        entity_type: "candidate",
-        candidate_id: candRow.id,
-        political_group_id: null,
-        treasurer_name: data.treasurerName.trim(),
-        mailing_address: data.mailingAddress.trim(),
-        filing_jurisdiction_type: filing.type,
-        filing_jurisdiction_name: filing.name,
-        filing_status: data.filingStatus.trim(),
-        contribution_limit: committeeLimit,
-      });
+      const { data: comRow, error: comErr } = await supabase
+        .from("committees")
+        .insert({
+          entity_type: "candidate",
+          candidate_id: candRow.id,
+          political_group_id: null,
+          treasurer_name: data.treasurerName.trim(),
+          mailing_address: data.mailingAddress.trim(),
+          filing_jurisdiction_type: filing.type,
+          filing_jurisdiction_name: filing.name,
+          filing_status: data.filingStatus.trim(),
+          contribution_limit: committeeLimit,
+          ruleset_id: rulesetId,
+        })
+        .select("id")
+        .single();
 
       if (comErr) {
         await supabase.from("candidates").delete().eq("id", candRow.id);
         setSaving(false);
         setSubmitError(comErr.message);
         return;
+      }
+
+      if (comRow?.id) {
+        try {
+          await fetch("/api/deadlines/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ committee_id: comRow.id }),
+          });
+        } catch {
+          /* non-fatal */
+        }
       }
     } else {
       const { data: pgRow, error: pgErr } = await supabase
@@ -1663,6 +1790,32 @@ export default function NewCommitteePage() {
                 className={inputClass}
               />
             </div>
+            {showConventionFields ? (
+              <div>
+                <label htmlFor="conv" className={labelClass}>
+                  Party convention date
+                </label>
+                <input
+                  id="conv"
+                  type="date"
+                  value={data.conventionDate}
+                  onChange={(e) => {
+                    update("conventionDate", e.target.value);
+                    update("conventionDateSource", "override");
+                  }}
+                  className={inputClass}
+                />
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1.5">
+                  This is your party&apos;s default convention date. Update it if
+                  your county convention is on a different date.
+                </p>
+                {errors.conventionDate ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                    {errors.conventionDate}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div>
               <label htmlFor="fstat" className={labelClass}>
                 Filing status

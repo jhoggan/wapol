@@ -12,18 +12,26 @@ export type DeadlineRow = {
   filing_period_end: string;
   due_date: string;
   completed: boolean;
+  disqualification_risk?: boolean;
+  grace_period_hours?: number | null;
+  fine_amount?: number | null;
+  deadline_time?: string | null;
 };
 
 type Props = {
   initialRows: DeadlineRow[];
   todayIso: string;
   scopedCommitteeLabel?: string;
+  rulesetLabel?: string | null;
+  contributionAlertCount?: number;
 };
 
 export function DeadlinesClient({
   initialRows,
   todayIso,
   scopedCommitteeLabel,
+  rulesetLabel,
+  contributionAlertCount = 0,
 }: Props) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -63,7 +71,20 @@ export function DeadlinesClient({
             ? `Deadlines for ${scopedCommitteeLabel}. Sorted by due date.`
             : "Sorted by due date. Overdue and incomplete rows are highlighted."}
         </p>
+        {rulesetLabel ? (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+            Active ruleset: {rulesetLabel}
+          </p>
+        ) : null}
       </div>
+
+      {contributionAlertCount > 0 ? (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+          {contributionAlertCount} contribution
+          {contributionAlertCount === 1 ? "" : "s"} approaching the 31-day reporting
+          window. Review the Contributions page and notifications.
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -74,6 +95,7 @@ export function DeadlinesClient({
                 <th className="px-4 py-3 font-medium">Period start</th>
                 <th className="px-4 py-3 font-medium">Period end</th>
                 <th className="px-4 py-3 font-medium">Due</th>
+                <th className="px-4 py-3 font-medium">Flags</th>
                 <th className="px-4 py-3 font-medium">Completed</th>
               </tr>
             </thead>
@@ -81,7 +103,7 @@ export function DeadlinesClient({
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     No deadlines yet.
@@ -120,6 +142,36 @@ export function DeadlinesClient({
                         }`}
                       >
                         {formatDate(row.due_date)}
+                        {row.deadline_time && row.deadline_time !== "23:59" ? (
+                          <span className="block text-xs text-neutral-500">
+                            {row.deadline_time}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+                        {row.disqualification_risk ||
+                        row.grace_period_hours != null ||
+                        row.fine_amount != null ? (
+                          <>
+                            {row.disqualification_risk ? (
+                              <span className="inline-flex rounded bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200 px-2 py-0.5 font-medium">
+                                Disqualification risk
+                              </span>
+                            ) : null}
+                            {row.grace_period_hours != null ? (
+                              <span className="block">
+                                Grace: {row.grace_period_hours}h
+                              </span>
+                            ) : null}
+                            {row.fine_amount != null ? (
+                              <span className="block">
+                                Fine: ${Number(row.fine_amount).toFixed(2)}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-2.5">
                         <label className="inline-flex items-center gap-2 cursor-pointer">

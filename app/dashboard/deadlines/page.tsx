@@ -44,10 +44,31 @@ export default async function DeadlinesPage({
   const { data: rows } = await supabase
     .from("filing_deadlines")
     .select(
-      "id, deadline_name, filing_period_start, filing_period_end, due_date, completed"
+      "id, deadline_name, filing_period_start, filing_period_end, due_date, completed, disqualification_risk, grace_period_hours, fine_amount, deadline_time"
     )
     .eq("committee_id", committee)
     .order("due_date", { ascending: true });
+
+  const { data: comMeta } = await supabase
+    .from("committees")
+    .select("ruleset_id, jurisdiction_rulesets(name, version)")
+    .eq("id", committee)
+    .maybeSingle();
+
+  const rs = comMeta?.jurisdiction_rulesets as
+    | { name?: string; version?: number }
+    | null
+    | undefined;
+  const rulesetLabel =
+    rs?.name != null && rs?.version != null
+      ? `${rs.name} (v${rs.version})`
+      : null;
+
+  const { count: alertCount } = await supabase
+    .from("contribution_alerts")
+    .select("id", { count: "exact", head: true })
+    .eq("committee_id", committee)
+    .eq("resolved", false);
 
   const scoped = committees.filter((c) => c.id === committee);
   const label = scoped[0]?.label ?? "this committee";
@@ -57,6 +78,8 @@ export default async function DeadlinesPage({
       initialRows={rows ?? []}
       todayIso={todayIso}
       scopedCommitteeLabel={label}
+      rulesetLabel={rulesetLabel}
+      contributionAlertCount={alertCount ?? 0}
     />
   );
 }

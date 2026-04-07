@@ -9,6 +9,7 @@ import {
   ActiveCommitteeProvider,
   useActiveCommittee,
 } from "./active-committee-context";
+import { NotificationBell } from "./notification-bell";
 
 function committeeExemptPath(pathname: string) {
   return (
@@ -357,6 +358,7 @@ function DashboardShellInner({
                 Settings
               </span>
             )}
+            <NotificationBell />
             <form action={signOut}>
               <button
                 type="submit"
