@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { CommitteeOption } from "@/lib/dashboard/scope";
@@ -14,24 +14,37 @@ export type ContributionRow = {
   payment_method: string;
   employer: string | null;
   occupation: string | null;
+  source: string;
+  is_recurring: boolean;
 };
 
 type Props = {
   initialRows: ContributionRow[];
   committees: CommitteeOption[];
   scopedCommitteeLabel?: string;
+  activeCommitteeId: string;
+  sourceFilter: "all" | "manual" | "actblue";
+  actBlueConnected: boolean;
+  actblueLastSyncedAt: string | null;
 };
 
 export function ContributionsClient({
   initialRows,
   committees,
   scopedCommitteeLabel,
+  activeCommitteeId,
+  sourceFilter,
+  actBlueConnected,
+  actblueLastSyncedAt,
 }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [committeeId, setCommitteeId] = useState(committees[0]?.id ?? "");
+  const [committeeId, setCommitteeId] = useState(
+    committees[0]?.id ?? activeCommitteeId
+  );
   const [donorFullName, setDonorFullName] = useState("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(() =>
@@ -40,9 +53,11 @@ export function ContributionsClient({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [employer, setEmployer] = useState("");
   const [occupation, setOccupation] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   function resetForm() {
-    setCommitteeId(committees[0]?.id ?? "");
+    setCommitteeId(committees[0]?.id ?? activeCommitteeId);
     setDonorFullName("");
     setAmount("");
     setDate(new Date().toISOString().slice(0, 10));
@@ -74,6 +89,7 @@ export function ContributionsClient({
       payment_method: paymentMethod.trim(),
       employer: employer.trim() || null,
       occupation: occupation.trim() || null,
+      source: "manual",
     });
     setSaving(false);
     if (error) {
@@ -83,6 +99,41 @@ export function ContributionsClient({
     setOpen(false);
     resetForm();
     router.refresh();
+  }
+
+  function setSourceFilter(next: "all" | "manual" | "actblue") {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("committee", activeCommitteeId);
+    if (next === "all") {
+      params.delete("source");
+    } else {
+      params.set("source", next);
+    }
+    router.push(`/dashboard/contributions?${params.toString()}`);
+  }
+
+  async function syncNow() {
+    setSyncMsg(null);
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/actblue/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ committee_id: activeCommitteeId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!res.ok) {
+        setSyncMsg(data.error ?? `Sync failed (${res.status})`);
+        setSyncing(false);
+        return;
+      }
+      setSyncMsg("Sync started. Refresh shortly to see new contributions.");
+    } catch {
+      setSyncMsg("Could not start sync.");
+    }
+    setSyncing(false);
   }
 
   const inputClass =
@@ -101,6 +152,21 @@ export function ContributionsClient({
               : "All contributions for your committees."}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm text-neutral-600 dark:text-neutral-400 sr-only">
+            Filter by source
+          </label>
+          <select
+            value={sourceFilter}
+            onChange={(e) =>
+              setSourceFilter(e.target.value as "all" | "manual" | "actblue")
+            }
+            className="rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-950 px-3 py-2 text-sm"
+          >
+            <option value="all">All sources</option>
+            <option value="manual">Manual</option>
+            <option value="actblue">ActBlue</option>
+          </select>
         <button
           type="button"
           onClick={() => setOpen(true)}
@@ -109,7 +175,36 @@ export function ContributionsClient({
         >
           Add contribution
         </button>
+        </div>
       </div>
+
+      {actBlueConnected ? (
+        <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-600 dark:text-neutral-400">
+          <span>
+            ActBlue last synced:{" "}
+            {actblueLastSyncedAt
+              ? new Date(actblueLastSyncedAt).toLocaleString("en-US", {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })
+              : "never"}
+            <span className="mx-2 text-neutral-400">·</span>
+          </span>
+          <button
+            type="button"
+            onClick={syncNow}
+            disabled={syncing}
+            className="font-medium text-neutral-900 dark:text-neutral-100 underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {syncing ? "Starting…" : "Sync now"}
+          </button>
+          {syncMsg ? (
+            <span className="text-neutral-500 dark:text-neutral-500 w-full sm:w-auto">
+              {syncMsg}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {committees.length === 0 ? (
         <p className="text-sm text-neutral-500 rounded-lg border border-dashed border-neutral-300 dark:border-neutral-700 p-6 text-center">
@@ -122,6 +217,7 @@ export function ContributionsClient({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-800 text-left text-neutral-500 dark:text-neutral-400">
+                <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Donor</th>
                 <th className="px-4 py-3 font-medium">Amount</th>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -134,7 +230,7 @@ export function ContributionsClient({
               {initialRows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-neutral-500"
                   >
                     No contributions yet.
@@ -146,6 +242,24 @@ export function ContributionsClient({
                     key={row.id}
                     className="border-b border-neutral-100 dark:border-neutral-800/80"
                   >
+                    <td className="px-4 py-2.5 align-top">
+                      <div className="flex flex-wrap gap-1.5">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                            row.source === "actblue"
+                              ? "bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-100"
+                              : "bg-neutral-200 text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100"
+                          }`}
+                        >
+                          {row.source === "actblue" ? "ActBlue" : "Manual"}
+                        </span>
+                        {row.is_recurring ? (
+                          <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-violet-100 text-violet-900 dark:bg-violet-900/40 dark:text-violet-100">
+                            Recurring
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-4 py-2.5 text-neutral-900 dark:text-neutral-100">
                       {row.donor_full_name}
                     </td>

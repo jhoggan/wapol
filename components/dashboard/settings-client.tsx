@@ -17,6 +17,8 @@ type Props = {
     contribution_limit_alerts: boolean;
     product_updates: boolean;
   } | null;
+  /** Rendered after Profile, before Billing (e.g. ActBlue integration). */
+  afterProfile?: React.ReactNode;
 };
 
 function Toggle({
@@ -61,7 +63,7 @@ function Toggle({
   );
 }
 
-export function SettingsClient({ email, profile, prefs }: Props) {
+export function SettingsClient({ email, profile, prefs, afterProfile }: Props) {
   const router = useRouter();
   const [firstName, setFirstName] = useState(profile?.first_name ?? "");
   const [lastName, setLastName] = useState(profile?.last_name ?? "");
@@ -224,6 +226,8 @@ export function SettingsClient({ email, profile, prefs }: Props) {
           ) : null}
         </div>
       </section>
+
+      {afterProfile}
 
       <section className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-6 shadow-sm space-y-3">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">

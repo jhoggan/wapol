@@ -1,3 +1,4 @@
+import { ActBlueSettingsSection } from "@/components/dashboard/actblue-settings-section";
 import { SettingsClient } from "@/components/dashboard/settings-client";
 import { SelectCommitteePrompt } from "@/components/dashboard/select-committee-prompt";
 import { getDashboardCommittees } from "@/lib/dashboard/scope";
@@ -44,11 +45,44 @@ export default async function SettingsPage({
     .eq("user_id", user.id)
     .maybeSingle();
 
+  const showActBlue = committee !== "" && idSet.has(committee);
+
+  const activeMeta = committees.find((c) => c.id === committee);
+  const committeeName =
+    activeMeta?.committeeName ?? activeMeta?.label ?? "Committee";
+
+  const { data: actblueRow } = showActBlue
+    ? await supabase
+        .from("committees")
+        .select(
+          "actblue_client_uuid, actblue_client_secret, actblue_last_synced_at"
+        )
+        .eq("id", committee)
+        .maybeSingle()
+    : { data: null as null };
+
+  const secret = actblueRow?.actblue_client_secret?.trim() ?? "";
+  const hasSavedSecret = secret.length > 0;
+  const secretLast4 =
+    hasSavedSecret && secret.length >= 4 ? secret.slice(-4) : null;
+
   return (
     <SettingsClient
       email={user.email}
       profile={profile}
       prefs={prefs}
+      afterProfile={
+        showActBlue ? (
+          <ActBlueSettingsSection
+            committeeId={committee}
+            committeeName={committeeName}
+            initialClientUuid={actblueRow?.actblue_client_uuid?.trim() ?? null}
+            hasSavedSecret={hasSavedSecret}
+            secretLast4={secretLast4}
+            lastSyncedAt={actblueRow?.actblue_last_synced_at ?? null}
+          />
+        ) : null
+      }
     />
   );
 }

@@ -6,10 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 export default async function ContributionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ committee?: string }>;
+  searchParams: Promise<{ committee?: string; source?: string }>;
 }) {
-  const { committee: committeeParam } = await searchParams;
+  const { committee: committeeParam, source: sourceParam } = await searchParams;
   const committee = committeeParam?.trim() ?? "";
+  const sourceRaw = sourceParam?.trim().toLowerCase() ?? "";
+  const sourceFilter =
+    sourceRaw === "manual" || sourceRaw === "actblue" ? sourceRaw : "all";
 
   const supabase = await createClient();
   const {
@@ -39,14 +42,34 @@ export default async function ContributionsPage({
     );
   }
 
-  const { data: rows } = await supabase
+  let contribQuery = supabase
     .from("contributions")
     .select(
-      "id, donor_full_name, amount, date, payment_method, employer, occupation"
+      "id, donor_full_name, amount, date, payment_method, employer, occupation, source, is_recurring"
     )
-    .eq("committee_id", committee)
+    .eq("committee_id", committee);
+
+  if (sourceFilter === "manual") {
+    contribQuery = contribQuery.eq("source", "manual");
+  } else if (sourceFilter === "actblue") {
+    contribQuery = contribQuery.eq("source", "actblue");
+  }
+
+  const { data: rows } = await contribQuery
     .order("date", { ascending: false })
     .order("created_at", { ascending: false });
+
+  const { data: comRow } = await supabase
+    .from("committees")
+    .select(
+      "actblue_last_synced_at, actblue_client_uuid, actblue_client_secret"
+    )
+    .eq("id", committee)
+    .maybeSingle();
+
+  const actBlueConnected = Boolean(
+    comRow?.actblue_client_uuid?.trim() && comRow?.actblue_client_secret?.trim()
+  );
 
   const scoped = committees.filter((c) => c.id === committee);
   const label = scoped[0]?.label ?? "this committee";
@@ -56,6 +79,10 @@ export default async function ContributionsPage({
       initialRows={rows ?? []}
       committees={scoped}
       scopedCommitteeLabel={label}
+      activeCommitteeId={committee}
+      sourceFilter={sourceFilter}
+      actBlueConnected={actBlueConnected}
+      actblueLastSyncedAt={comRow?.actblue_last_synced_at ?? null}
     />
   );
 }
